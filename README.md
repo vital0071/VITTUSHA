@@ -213,6 +213,24 @@ Project memory extraction recognizes French and Haitian Creole variants such as 
 
 Memory diagnostic logs include `memory_extracted`, `memory_extracted_type`, `memory_stored`, `memories_retrieved`, `memory_context_created`, `context_injected`, `memory_direct_answer_match`, `memory_direct_answer_failed_reason`, and `memory_used`.
 
+## Sprint Quality Gate
+
+Every sprint must include:
+
+- Unit tests for isolated rules and services.
+- Integration tests across Brain, Memory, Agents, and repositories.
+- E2E tests that simulate the real Telegram behavior.
+
+The required E2E memory regression is:
+
+```text
+User: Je développe Vittusha AI.
+User: Quel projet je développe ?
+Expected: Vous développez Vittusha AI.
+```
+
+This E2E test must fail if OpenAI is called for the second message. A sprint is not considered complete until this E2E test passes.
+
 ## Setup
 
 1. Install dependencies:
