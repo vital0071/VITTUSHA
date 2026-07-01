@@ -6,11 +6,13 @@ import { ContextBuilder } from './ContextBuilder.js';
 import { IntentDetector } from './IntentDetector.js';
 import { BrainPipeline } from './BrainPipeline.js';
 import { ResponseGenerator } from './ResponseGenerator.js';
+import { ProjectManager } from '../projects/ProjectManager.js';
 
 export class Brain {
   constructor(dependencies = {}) {
     this.logger = dependencies.logger ?? defaultLogger;
     this.memory = dependencies.memory ?? new ConversationMemory({ logger: this.logger });
+    this.projectManager = dependencies.projectManager ?? new ProjectManager({ logger: this.logger });
     this.toolRegistry = dependencies.toolRegistry ?? new ToolRegistry();
     this.responseGenerator = dependencies.responseGenerator ?? new ResponseGenerator({
       logger: this.logger,
@@ -18,6 +20,7 @@ export class Brain {
     });
     this.agent = dependencies.agent ?? new ExecutiveAgent({
       memory: this.memory,
+      projectManager: this.projectManager,
       toolRegistry: this.toolRegistry,
       responseGenerator: this.responseGenerator,
       logger: this.logger

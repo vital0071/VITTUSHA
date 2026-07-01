@@ -7,6 +7,7 @@ import { TelegramGateway } from '../../src/channels/telegram/TelegramGateway.js'
 import { ConversationMemory } from '../../src/memory/ConversationMemory.js';
 import { MemoryRepository } from '../../src/memory/MemoryRepository.js';
 import { MemoryService } from '../../src/memory/MemoryService.js';
+import { ProjectManager } from '../../src/projects/ProjectManager.js';
 
 function createLogger() {
   return {
@@ -39,6 +40,17 @@ function createMemoryService(logger) {
   });
 
   return new MemoryService({ repository, logger });
+}
+
+function createProjectManager(logger) {
+  return new ProjectManager({
+    logger,
+    state: {
+      projectsByUser: new Map(),
+      activeProjectByUser: new Map(),
+      nextProjectId: 1
+    }
+  });
 }
 
 function telegramTextUpdate({ text, messageId }) {
@@ -224,6 +236,132 @@ test('E2E Telegram memory direct answer does not call OpenAI on known project qu
   assert.equal(logger.events.some((event) => event.message === 'direct_memory_answer_success'), true);
   assert.equal(logger.events.some((event) => event.message === 'memory_used'), true);
   assert.equal(logger.events.some((event) => event.message === 'response_sent' && event.channel === 'telegram'), true);
+});
+
+test('E2E Telegram creates and lists projects through ProjectManager', async () => {
+  const logger = createLogger();
+  const memoryService = createMemoryService(logger);
+  const sentReplies = [];
+  let openaiCallCount = 0;
+  const brain = new Brain({
+    logger,
+    memory: new ConversationMemory({ logger, service: memoryService }),
+    projectManager: createProjectManager(logger),
+    generateReply: async () => {
+      openaiCallCount += 1;
+      throw new Error('OpenAI must not be called for ProjectManager E2E.');
+    }
+  });
+
+  class CapturingTelegramGateway extends TelegramGateway {
+    async send({ reply }) {
+      sentReplies.push(reply);
+      return { reply, supported: true };
+    }
+  }
+
+  const app = createApp({
+    telegramGateway: new CapturingTelegramGateway({ brain, logger }),
+    logger
+  });
+
+  await postJson(app, '/webhook/telegram', telegramTextUpdate({
+    text: 'Crée un projet appelé KonekteW',
+    messageId: 20
+  }));
+  await postJson(app, '/webhook/telegram', telegramTextUpdate({
+    text: 'Quels sont mes projets ?',
+    messageId: 21
+  }));
+
+  assert.equal(sentReplies[0], 'Projet KonekteW créé.');
+  assert.match(sentReplies[1], /KonekteW/);
+  assert.equal(openaiCallCount, 0);
+  assert.equal(logger.events.some((event) => event.message === 'project_intent_detected'), true);
+  assert.equal(logger.events.some((event) => event.message === 'project_created'), true);
+});
+
+test('E2E Telegram answers active project through ProjectManager', async () => {
+  const logger = createLogger();
+  const memoryService = createMemoryService(logger);
+  const sentReplies = [];
+  let openaiCallCount = 0;
+  const brain = new Brain({
+    logger,
+    memory: new ConversationMemory({ logger, service: memoryService }),
+    projectManager: createProjectManager(logger),
+    generateReply: async () => {
+      openaiCallCount += 1;
+      throw new Error('OpenAI must not be called for active project E2E.');
+    }
+  });
+
+  class CapturingTelegramGateway extends TelegramGateway {
+    async send({ reply }) {
+      sentReplies.push(reply);
+      return { reply, supported: true };
+    }
+  }
+
+  const app = createApp({
+    telegramGateway: new CapturingTelegramGateway({ brain, logger }),
+    logger
+  });
+
+  await postJson(app, '/webhook/telegram', telegramTextUpdate({
+    text: 'Mon projet actif est Vittusha AI',
+    messageId: 30
+  }));
+  await postJson(app, '/webhook/telegram', telegramTextUpdate({
+    text: 'Sur quel projet je travaille ?',
+    messageId: 31
+  }));
+
+  assert.equal(sentReplies[1], 'Vous travaillez sur Vittusha AI.');
+  assert.equal(openaiCallCount, 0);
+  assert.equal(logger.events.some((event) => event.message === 'active_project_set'), true);
+});
+
+test('E2E Telegram adds and retrieves project notes through ProjectManager', async () => {
+  const logger = createLogger();
+  const memoryService = createMemoryService(logger);
+  const sentReplies = [];
+  let openaiCallCount = 0;
+  const brain = new Brain({
+    logger,
+    memory: new ConversationMemory({ logger, service: memoryService }),
+    projectManager: createProjectManager(logger),
+    generateReply: async () => {
+      openaiCallCount += 1;
+      throw new Error('OpenAI must not be called for project note E2E.');
+    }
+  });
+
+  class CapturingTelegramGateway extends TelegramGateway {
+    async send({ reply }) {
+      sentReplies.push(reply);
+      return { reply, supported: true };
+    }
+  }
+
+  const app = createApp({
+    telegramGateway: new CapturingTelegramGateway({ brain, logger }),
+    logger
+  });
+
+  await postJson(app, '/webhook/telegram', telegramTextUpdate({
+    text: 'Ajoute une note au projet Vittusha AI: créer le dashboard admin',
+    messageId: 40
+  }));
+  await postJson(app, '/webhook/telegram', telegramTextUpdate({
+    text: 'Que sais-tu sur le projet Vittusha AI ?',
+    messageId: 41
+  }));
+
+  assert.match(sentReplies[1], /créer le dashboard admin/);
+  assert.equal(openaiCallCount, 0);
+  assert.equal(logger.events.some((event) => event.message === 'project_note_added'), true);
+  assert.equal(logger.events.some((event) => event.message === 'project_context_retrieved'), true);
 });
 
 test('debug routes return 404 when disabled', async () => {

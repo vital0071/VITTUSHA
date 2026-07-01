@@ -15,6 +15,7 @@ import { handleProactiveCommand } from '../ai-core/agent.js';
 export class ExecutiveAgent {
   constructor({
     memory,
+    projectManager,
     toolRegistry,
     responseGenerator,
     logger,
@@ -23,6 +24,7 @@ export class ExecutiveAgent {
   }) {
     this.name = 'ExecutiveAgent';
     this.memory = memory;
+    this.projectManager = projectManager;
     this.toolRegistry = toolRegistry;
     this.responseGenerator = responseGenerator;
     this.logger = logger;
@@ -40,6 +42,56 @@ export class ExecutiveAgent {
   }
 
   async handle(context) {
+    const projectResponse = await this.projectManager?.handleMessage({
+      userId: context.userId,
+      message: context.message,
+      memoryContext: context.memoryContext
+    });
+
+    if (projectResponse) {
+      const storedMemories = await this.memory.append({
+        tenantId: context.tenantId,
+        userId: context.userId,
+        conversationId: context.conversationId,
+        message: context.message,
+        answer: projectResponse.answer,
+        metadata: {
+          intent: context.intent,
+          agent: this.name,
+          language: context.detectedLanguage,
+          projectIntent: projectResponse.intent
+        }
+      });
+
+      this.logger.info('response_generated', {
+        answerLength: projectResponse.answer.length,
+        source: 'project_manager'
+      });
+
+      return {
+        answer: projectResponse.answer,
+        intent: context.intent,
+        agent: this.name,
+        actions: {
+          toolNeeded: null,
+          taskId: null,
+          requiresApproval: false,
+          ...projectResponse.actions
+        },
+        memories: {
+          loaded: context.memories,
+          stored: storedMemories
+        },
+        metadata: {
+          language: context.detectedLanguage,
+          openaiError: null,
+          openaiCalled: false,
+          retrievedMemories: context.memoryContext?.relevantMemories ?? [],
+          ...projectResponse.metadata
+        }
+      };
+    }
+
     const proactiveResponse = await handleProactiveCommand({
       message: context.message,
       userPhone: context.userId,
