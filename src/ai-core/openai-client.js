@@ -27,9 +27,17 @@ function extractOutputText(responseBody) {
   return parts.join('\n').trim();
 }
 
-export async function generateAssistantReply({ userMessage, detectedLanguage, memories = [], neededTool = null, pendingTask = null }) {
+export async function generateAssistantReply({
+  userMessage,
+  detectedLanguage,
+  memories = [],
+  memoryContext = null,
+  neededTool = null,
+  pendingTask = null
+}) {
   const systemPrompt = await loadSystemPrompt();
   const memoryText = memories.map((memory) => `- ${memory.value}`).join('\n') || '- No saved memories yet.';
+  const memoryContextText = memoryContext?.promptText || `Saved memories about the user:\n${memoryText}`;
   const toolText = neededTool
     ? `Tool likely needed: ${neededTool.name}. Status: placeholder. Do not claim it was used. Ask for approval before any external action.`
     : 'No external tool appears necessary.';
@@ -48,9 +56,10 @@ export async function generateAssistantReply({ userMessage, detectedLanguage, me
       instructions: [
         systemPrompt,
         languageInstruction(detectedLanguage),
-        `Saved memories about the user:\n${memoryText}`,
+        `Memory Engine Context:\n${memoryContextText}`,
         toolText,
         taskText,
+        'If the Memory Engine Context contains a direct answer to the user question, use that memory confidently. Do not ask the user to repeat information already present in memory.',
         'Return a concise WhatsApp-friendly answer. If a placeholder tool would be needed, say which tool is needed and ask for approval. Do not say you performed the action.'
       ].join('\n\n'),
       input: userMessage,

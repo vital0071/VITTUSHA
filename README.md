@@ -1,4 +1,4 @@
-# Vittusha AI Platform - Sprint 1 Brain Foundation
+# Vittusha AI Platform - Sprint 2 Memory Engine
 
 Node.js + Express service that receives channel messages, routes them into the Vittusha Brain, replies on the active messaging channel, and stores conversations, memories, and approval-gated tasks in PostgreSQL or Supabase.
 
@@ -11,8 +11,10 @@ Node.js + Express service that receives channel messages, routes them into the V
 - Brain Foundation with a central `processMessage()` contract.
 - ExecutiveAgent as the default agent.
 - Channel layer for send/receive only.
-- Memory system for long-term user facts.
-- ConversationMemory that keeps the latest 20 conversation messages from PostgreSQL when available, with an in-memory fallback.
+- Sprint 2 Memory Engine for user, conversation, fact, preference, project, business, language, objective, and custom memories.
+- Context builder that injects relevant memories, recent messages, preferences, projects, goals, business, language, and current conversation into OpenAI prompts.
+- Memory scoring by importance, freshness, usage, confidence, and relevance.
+- Automatic memory extraction after full user/assistant turns.
 - Intent detection for `greeting`, `question`, `task`, `research`, `action`, and `conversation`.
 - Task planner for approval-gated actions.
 - Placeholder tool registry for Gmail, Google Maps, HubSpot, browser, and calendar.
@@ -52,8 +54,17 @@ src/
     telegram/
       TelegramGateway.js    Telegram normalization gateway for the target channel
   memory/
-    ConversationMemory.js   Recent conversation memory plus PostgreSQL fallback
-    memory-store.js         Long-term memory persistence
+    ConversationMemory.js   Brain-facing memory facade
+    MemoryService.js        Public Memory Engine API
+    MemoryRepository.js     PostgreSQL repository with fallback
+    MemoryExtractor.js      Automatic memory extraction
+    MemoryRetriever.js      Relevant memory retrieval
+    MemoryScorer.js         Importance/freshness/usage/confidence/relevance scoring
+    MemoryDirectAnswer.js   Direct answers from known memory when possible
+    MemoryContextBuilder.js Structured prompt context builder
+    MemoryTypes.js          Canonical memory type list
+    README.md               Memory module documentation
+    memory-store.js         Legacy memory helpers kept for compatibility
   prompts/system-prompt.md  Editable assistant behavior prompt
   proactive-engine.js       Pending work analysis and daily summaries
   scheduler/checkin.js      Optional daily WhatsApp check-in scheduler
@@ -136,6 +147,72 @@ Technical comment: this architecture keeps all channel-specific concerns outside
 
 Once a new gateway converts its native payload into the Brain message contract, the Brain, Memory, Agents, Tools, and OpenAI response path remain unchanged. This is the reason new channels can be added without modifying the Brain.
 
+## Sprint 2 Memory Engine
+
+The Brain no longer depends only on the current message. Before each OpenAI call, it asks the Memory Engine to build a scoped conversation context.
+
+Memory flow:
+
+```text
+Incoming message
+  -> Brain
+  -> ContextBuilder
+  -> MemoryService.buildConversationContext()
+  -> MemoryRetriever.findRelevantMemories()
+  -> MemoryScorer
+  -> MemoryContextBuilder
+  -> ResponseGenerator
+  -> OpenAI
+  -> MemoryService.recordConversationTurn()
+  -> MemoryExtractor
+  -> MemoryRepository.saveMemory()
+```
+
+Memory types:
+
+- `PERSON`
+- `PROJECT`
+- `BUSINESS`
+- `PREFERENCE`
+- `OBJECTIVE`
+- `FACT`
+- `TASK`
+- `LOCATION`
+- `LANGUAGE`
+- `RELATION`
+- `CONTACT`
+- `CUSTOM`
+
+The Memory Engine exposes:
+
+- `saveMemory()`
+- `searchMemory()`
+- `updateMemory()`
+- `archiveMemory()`
+- `deleteMemory()`
+- `findRelevantMemories()`
+- `buildConversationContext()`
+
+The OpenAI prompt receives these sections:
+
+- Current User
+- Relevant Memories
+- Recent Messages
+- Preferences
+- Projects
+- Goals
+- Business
+- Language
+- Current Conversation
+
+Embeddings and future RAG are prepared through `memory_embeddings`, `memory_tags`, and `memory_links`, but vector retrieval is intentionally not implemented yet.
+
+Direct memory answers are supported for known facts. For example, after `Je développe Vittusha AI.`, the question `Quel projet je développe ?` is answered from memory as `Vous développez Vittusha AI.` instead of asking the user to repeat.
+
+Project memory extraction recognizes French and Haitian Creole variants such as `Je développe Vittusha AI`, `Map devlope Vittusha AI`, `M ap devlope Vittusha AI`, and `Je travaille sur Vittusha AI`.
+
+Memory diagnostic logs include `memory_extracted`, `memory_extracted_type`, `memory_stored`, `memories_retrieved`, `memory_context_created`, `context_injected`, `memory_direct_answer_match`, `memory_direct_answer_failed_reason`, and `memory_used`.
+
 ## Setup
 
 1. Install dependencies:
@@ -176,6 +253,7 @@ If you already created the first MVP schema, apply the migration instead:
 ```bash
 psql "$DATABASE_URL" -f sql/migrations/001_agent_architecture.sql
 psql "$DATABASE_URL" -f sql/migrations/002_phase_5_light_suggestions.sql
+psql "$DATABASE_URL" -f sql/migrations/003_memory_engine.sql
 ```
 
 5. Start the server:

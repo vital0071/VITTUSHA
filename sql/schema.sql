@@ -25,12 +25,46 @@ CREATE INDEX IF NOT EXISTS idx_conversations_from_phone_created_at
 CREATE INDEX IF NOT EXISTS idx_conversations_detected_language
   ON conversations (detected_language);
 
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  external_id TEXT UNIQUE,
+  display_name TEXT,
+  language TEXT,
+  timezone TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS memories (
   id BIGSERIAL PRIMARY KEY,
   user_phone TEXT NOT NULL,
   key TEXT NOT NULL,
   value TEXT NOT NULL,
+  user_id TEXT,
+  type TEXT NOT NULL DEFAULT 'FACT'
+    CHECK (type IN (
+      'PERSON',
+      'PROJECT',
+      'BUSINESS',
+      'PREFERENCE',
+      'OBJECTIVE',
+      'FACT',
+      'TASK',
+      'LOCATION',
+      'LANGUAGE',
+      'RELATION',
+      'CONTACT',
+      'CUSTOM'
+    )),
+  title TEXT,
+  content TEXT,
+  importance NUMERIC(3,2) NOT NULL DEFAULT 0.50,
+  confidence NUMERIC(3,2) NOT NULL DEFAULT 0.70,
   source TEXT NOT NULL DEFAULT 'agent',
+  last_used_at TIMESTAMPTZ,
+  usage_count INTEGER NOT NULL DEFAULT 0,
+  is_archived BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (user_phone, key)
@@ -38,6 +72,55 @@ CREATE TABLE IF NOT EXISTS memories (
 
 CREATE INDEX IF NOT EXISTS idx_memories_user_phone
   ON memories (user_phone);
+
+CREATE INDEX IF NOT EXISTS idx_memories_user_type_updated_at
+  ON memories (user_id, type, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_memories_user_archived_importance
+  ON memories (user_id, is_archived, importance DESC, confidence DESC);
+
+CREATE TABLE IF NOT EXISTS conversation_messages (
+  id BIGSERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  conversation_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system', 'tool')),
+  content TEXT NOT NULL,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_messages_user_conversation_created
+  ON conversation_messages (user_id, conversation_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS memory_embeddings (
+  id BIGSERIAL PRIMARY KEY,
+  memory_id BIGINT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  provider TEXT,
+  model TEXT,
+  embedding JSONB,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS memory_tags (
+  id BIGSERIAL PRIMARY KEY,
+  memory_id BIGINT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  tag TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (memory_id, tag)
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_tags_tag
+  ON memory_tags (tag);
+
+CREATE TABLE IF NOT EXISTS memory_links (
+  id BIGSERIAL PRIMARY KEY,
+  source_memory_id BIGINT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  target_memory_id BIGINT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  relation_type TEXT NOT NULL DEFAULT 'related',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (source_memory_id, target_memory_id, relation_type)
+);
 
 CREATE TABLE IF NOT EXISTS tasks (
   id BIGSERIAL PRIMARY KEY,

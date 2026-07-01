@@ -90,13 +90,6 @@ export class ExecutiveAgent {
       };
     }
 
-    const storedMemory = await this.memory.storeFromMessage({
-      tenantId: context.tenantId,
-      userId: context.userId,
-      conversationId: context.conversationId,
-      message: context.message
-    });
-
     const neededTool = this.toolRegistry.detectNeededTool(context.message);
     let task = null;
 
@@ -117,11 +110,12 @@ export class ExecutiveAgent {
       message: context.message,
       detectedLanguage: context.detectedLanguage,
       memories: context.memories,
+      memoryContext: context.memoryContext,
       neededTool,
       pendingTask: task
     });
 
-    await this.memory.append({
+    const storedMemories = await this.memory.append({
       tenantId: context.tenantId,
       userId: context.userId,
       conversationId: context.conversationId,
@@ -147,7 +141,7 @@ export class ExecutiveAgent {
       },
       memories: {
         loaded: context.memories,
-        stored: storedMemory
+        stored: storedMemories
       },
       metadata: {
         language: context.detectedLanguage,

@@ -1,118 +1,57 @@
-import { ensureCoreMemories, loadMemories, storeMemoryFromMessage } from './memory-store.js';
-import { query } from '../db.js';
-
-const inMemoryConversations = new Map();
+import { MemoryService } from './MemoryService.js';
 
 export class ConversationMemory {
-  constructor({
-    logger,
-    maxMessages = 20,
-    ensureCore = ensureCoreMemories,
-    loadLongTerm = loadMemories,
-    storeLongTermFromMessage = storeMemoryFromMessage,
-    queryFn = query
-  } = {}) {
+  constructor({ logger, service = new MemoryService({ logger }) } = {}) {
     this.logger = logger;
-    this.maxMessages = maxMessages;
-    this.ensureCore = ensureCore;
-    this.loadLongTerm = loadLongTerm;
-    this.storeLongTermFromMessage = storeLongTermFromMessage;
-    this.query = queryFn;
+    this.service = service;
   }
 
-  async load({ userId, conversationId }) {
-    let longTermMemories = [];
+  async load({ tenantId = 'default', userId, conversationId, message = '', detectedLanguage, metadata = {} }) {
+    const context = await this.service.buildConversationContext({
+      tenantId,
+      userId,
+      conversationId,
+      message,
+      detectedLanguage,
+      metadata
+    });
 
-    try {
-      await this.ensureCore({ userPhone: userId });
-      longTermMemories = await this.loadLongTerm({ userPhone: userId });
-    } catch (error) {
-      this.logger?.warn('long_term_memory_postgres_unavailable', {
-        error: error.message
-      });
-    }
-
-    const recentMessages = await this.loadRecentMessages({ userId, conversationId });
-
-    return [
-      ...longTermMemories,
-      ...recentMessages.map((item, index) => ({
-        id: `recent_${index}`,
-        key: 'recent_message',
-        value: `${item.role}: ${item.content}`,
-        source: 'conversation'
-      }))
-    ];
+    return toLegacyMemories(context);
   }
 
-  async append({ conversationId, message, answer }) {
-    const key = this.key(conversationId);
-    const current = inMemoryConversations.get(key) ?? [];
-    const next = [
-      ...current,
-      { role: 'user', content: message, createdAt: new Date().toISOString() },
-      { role: 'assistant', content: answer, createdAt: new Date().toISOString() }
-    ].slice(-this.maxMessages);
-
-    inMemoryConversations.set(key, next);
-    return next;
+  async buildConversationContext(input) {
+    return this.service.buildConversationContext(input);
   }
 
-  async storeFromMessage({ userId, message }) {
-    try {
-      return await this.storeLongTermFromMessage({
-        userPhone: userId,
-        message
-      });
-    } catch (error) {
-      this.logger?.warn('long_term_memory_store_unavailable', {
-        error: error.message
-      });
-      return null;
-    }
+  async append({ tenantId = 'default', userId, conversationId, message, answer, metadata = {} }) {
+    return this.service.recordConversationTurn({
+      tenantId,
+      userId,
+      conversationId,
+      message,
+      answer,
+      metadata
+    });
   }
 
-  async loadRecentMessages({ userId, conversationId }) {
-    try {
-      const result = await this.query(
-        `
-          SELECT user_message, assistant_reply, created_at
-          FROM conversations
-          WHERE from_phone = $1
-          ORDER BY created_at DESC
-          LIMIT 10
-        `,
-        [userId]
-      );
-
-      return result.rows.reverse().flatMap((row) => {
-        const messages = [
-          {
-            role: 'user',
-            content: row.user_message,
-            createdAt: row.created_at
-          }
-        ];
-
-        if (row.assistant_reply) {
-          messages.push({
-            role: 'assistant',
-            content: row.assistant_reply,
-            createdAt: row.created_at
-          });
-        }
-
-        return messages;
-      }).slice(-this.maxMessages);
-    } catch (error) {
-      this.logger?.warn('conversation_memory_postgres_unavailable', {
-        error: error.message
-      });
-      return inMemoryConversations.get(this.key(conversationId)) ?? [];
-    }
+  async storeFromMessage(_input) {
+    return null;
   }
+}
 
-  key(conversationId) {
-    return String(conversationId || 'default');
-  }
+function toLegacyMemories(context) {
+  return [
+    ...context.relevantMemories.map((memory) => ({
+      ...memory,
+      key: memory.title,
+      value: `[${memory.type}] ${memory.title}: ${memory.content}`,
+      source: memory.source
+    })),
+    ...context.recentMessages.map((message, index) => ({
+      id: `recent_${message.id ?? index}`,
+      key: 'recent_message',
+      value: `${message.role}: ${message.content}`,
+      source: 'conversation'
+    }))
+  ];
 }
