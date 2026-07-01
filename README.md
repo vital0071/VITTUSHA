@@ -1,6 +1,6 @@
-# Private WhatsApp AI Assistant MVP
+# Vittusha AI Platform - Sprint 1 Brain Foundation
 
-Simple Node.js + Express service that receives WhatsApp Cloud API messages, routes them into an AI Core, replies on WhatsApp, and stores conversations, memories, and approval-gated tasks in PostgreSQL or Supabase.
+Node.js + Express service that receives channel messages, routes them into the Vittusha Brain, replies on the active messaging channel, and stores conversations, memories, and approval-gated tasks in PostgreSQL or Supabase.
 
 ## Features
 
@@ -8,9 +8,12 @@ Simple Node.js + Express service that receives WhatsApp Cloud API messages, rout
 - Incoming WhatsApp text message handling.
 - Private phone allowlist with `APPROVED_PHONE_NUMBER`.
 - OpenAI Responses API integration.
-- AI Core that receives message, user phone, channel, and language, then returns a structured response.
-- WhatsApp channel layer for send/receive only.
+- Brain Foundation with a central `processMessage()` contract.
+- ExecutiveAgent as the default agent.
+- Channel layer for send/receive only.
 - Memory system for long-term user facts.
+- ConversationMemory that keeps the latest 20 conversation messages from PostgreSQL when available, with an in-memory fallback.
+- Intent detection for `greeting`, `question`, `task`, `research`, `action`, and `conversation`.
 - Task planner for approval-gated actions.
 - Placeholder tool registry for Gmail, Google Maps, HubSpot, browser, and calendar.
 - Phase 5 Light proactive assistant with suggestions and opt-in daily check-in.
@@ -28,12 +31,28 @@ src/
   server.js                 Runtime entrypoint
   config.js                 Environment configuration and phone allowlist
   db.js                     PostgreSQL connection pool
+  agents/
+    ExecutiveAgent.js        Default Sprint 1 agent
   ai-core/
-    agent.js                Central AI Core message processor
+    agent.js                Legacy AI Core entrypoint kept for compatibility
     openai-client.js        OpenAI API call and prompt assembly
+  brain/
+    Brain.js                Central Brain with processMessage()
+    BrainPipeline.js        Message lifecycle orchestration
+    ContextBuilder.js       Language and memory context loading
+    IntentDetector.js       Simple intent classifier
+    ResponseGenerator.js    OpenAI-backed response generation
   channels/
-    whatsapp.js             WhatsApp send/receive/routing boundary
+    ChannelGateway.js       Gateway interface: receive/send/typing/acknowledge
+    ChannelGatewayRegistry.js
+    MetaWhatsAppCloudGateway.js
+                             Current Meta webhook compatibility gateway
+    WhatsAppGateway.js      Empty future placeholder, intentionally unused
+    whatsapp.js             WhatsApp send/receive boundary that calls Brain
+    telegram/
+      TelegramGateway.js    Telegram normalization gateway for the target channel
   memory/
+    ConversationMemory.js   Recent conversation memory plus PostgreSQL fallback
     memory-store.js         Long-term memory persistence
   prompts/system-prompt.md  Editable assistant behavior prompt
   proactive-engine.js       Pending work analysis and daily summaries
@@ -41,15 +60,81 @@ src/
   services/
     conversations.js        Database writes
     language.js             Language detection helper
+  shared/
+    logger.js               Shared logger export
   suggestions.js            Suggestion lifecycle persistence
   tasks/
     task-planner.js         Approval-gated task creation
   tools/
+    ToolRegistry.js         Tool registry class wrapper
     registry.js             Placeholder tool registry
 sql/schema.sql              Database schema
 sql/migrations/             Incremental database migrations
 .env.example                Required environment variables
 ```
+
+## Sprint 1 Architecture
+
+The channel does not own AI logic anymore. The HTTP server does not know OpenAI and does not call agent code. It receives a webhook, identifies the channel, resolves the matching gateway, and hands off the payload.
+
+```text
+Webhook
+  -> Channel Gateway
+  -> Brain.processMessage({
+       tenantId,
+       userId,
+       channel,
+       conversationId,
+       message,
+       metadata
+     })
+  -> BrainPipeline
+  -> ContextBuilder
+  -> IntentDetector
+  -> ExecutiveAgent
+  -> ResponseGenerator
+  -> OpenAI client
+  -> Channel response
+```
+
+```mermaid
+flowchart TD
+    Client["Client"]
+    Gateway["Gateway"]
+    Brain["Brain"]
+    Memory["Memory"]
+    Agents["Agents"]
+    Tools["Tools"]
+    OpenAI["OpenAI"]
+
+    Client --> Gateway
+    Gateway --> Brain
+    Brain --> Memory
+    Brain --> Agents
+    Agents --> Tools
+    Agents --> OpenAI
+```
+
+`Brain.processMessage()` returns:
+
+```text
+{
+  reply,
+  actions,
+  logs
+}
+```
+
+Current production routing still supports the existing Meta WhatsApp webhook through `MetaWhatsAppCloudGateway`. `src/channels/telegram/TelegramGateway.js` is present as the target Telegram gateway boundary and follows the same gateway contract.
+
+Technical comment: this architecture keeps all channel-specific concerns outside the Brain. A future Web App, public API, Discord bot, Slack app, or Mobile App only needs a gateway that implements:
+
+- `receive()`
+- `send()`
+- `typing()`
+- `acknowledge()`
+
+Once a new gateway converts its native payload into the Brain message contract, the Brain, Memory, Agents, Tools, and OpenAI response path remain unchanged. This is the reason new channels can be added without modifying the Brain.
 
 ## Setup
 
@@ -105,6 +190,50 @@ Production:
 npm start
 ```
 
+Run syntax checks:
+
+```bash
+npm run check
+```
+
+Run tests:
+
+```bash
+npm test
+```
+
+## PM2 Operations
+
+Restart the production process:
+
+```bash
+pm2 restart vittusha-ai
+```
+
+Inspect logs:
+
+```bash
+pm2 logs vittusha-ai
+```
+
+Useful PM2 commands:
+
+```bash
+pm2 status
+pm2 describe vittusha-ai
+pm2 monit
+```
+
+The Brain logs these lifecycle events:
+
+- `message_received`
+- `memory_loaded`
+- `intent_detected`
+- `agent_selected`
+- `openai_called`
+- `response_generated`
+- `response_sent`
+
 ## Meta WhatsApp Webhook
 
 Expose your local server with a tunnel such as ngrok:
@@ -135,29 +264,32 @@ The service detects language before calling OpenAI:
 - Mixed language: replies mainly in the dominant detected language.
 - Unclear language: defaults to Haitian Creole.
 
-## Agent Architecture
+## Brain and Agent Architecture
 
-WhatsApp is only a communication channel. It parses incoming text, checks the approved phone number, stores the conversation shell, calls AI Core, sends the returned reply, and updates the conversation record.
+The messaging channel is only a communication boundary. It parses incoming text, checks the approved user, stores the conversation shell, calls the Brain, sends the returned reply, and updates the conversation record.
 
-AI Core is the brain. It receives:
+The Brain receives:
 
-- `message`
-- `userPhone`
+- `tenantId`
+- `userId`
 - `channel`
-- `language`
+- `conversationId`
+- `message`
+- `metadata`
 
 It returns a structured response:
 
-- `replyText`
-- `language`
-- `channel`
-- `userPhone`
-- `toolNeeded`
-- `taskId`
-- `requiresApproval`
-- `metadata`
+- `reply`
+- `answer`
+- `intent`
+- `agent`
+- `actions`
+- `memories`
+- `logs`
 
-Memory and tasks are stored in PostgreSQL/Supabase, not inside the WhatsApp channel.
+`answer` remains as a temporary compatibility alias for existing code paths. New gateways should read `reply`.
+
+All messages currently pass through `ExecutiveAgent`. Memory, tool detection, task planning, and OpenAI response generation happen behind the Brain boundary, not inside the channel.
 
 ## Memory System
 
@@ -169,6 +301,8 @@ The `memories` table stores long-term facts per phone number. The system seeds c
 - Never send external actions without approval
 
 The current MVP can also store simple user-provided memories from messages beginning with phrases like `remember that`.
+
+`ConversationMemory` also loads recent conversation turns from PostgreSQL using the existing `conversations` table. If PostgreSQL is unavailable during local development, it falls back to an in-memory buffer capped at 20 messages per conversation.
 
 ## Task Planner
 

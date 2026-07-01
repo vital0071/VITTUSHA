@@ -2,7 +2,7 @@ import { config, isApprovedPhoneNumber } from '../config.js';
 import { logger } from '../logger.js';
 import { createIncomingConversation, markConversationFailed, markConversationReplied } from '../services/conversations.js';
 import { detectLanguage } from '../services/language.js';
-import { processUserMessage } from '../ai-core/agent.js';
+import { brain } from '../brain/Brain.js';
 
 export function extractIncomingMessages(payload = {}) {
   const messages = [];
@@ -65,13 +65,47 @@ export async function sendWhatsAppTextMessage({ to, text }) {
 }
 
 export async function routeWhatsAppMessage(message, rawPayload, dependencies = {}) {
+  const injectedBrain = dependencies.brain ?? (dependencies.processUserMessage
+    ? {
+        async processMessage(input) {
+          const legacyResponse = await dependencies.processUserMessage({
+            message: input.message,
+            userPhone: input.userId,
+            channel: input.channel,
+            language: input.metadata?.language
+          });
+
+          return {
+            answer: legacyResponse.replyText,
+            intent: legacyResponse.intent ?? 'conversation',
+            agent: legacyResponse.agent ?? 'LegacyAICore',
+            actions: {
+              toolNeeded: legacyResponse.toolNeeded ?? null,
+              taskId: legacyResponse.taskId ?? null,
+              requiresApproval: legacyResponse.requiresApproval ?? false
+            },
+            memories: {
+              loaded: [],
+              stored: legacyResponse.memoryStored ?? null
+            },
+            proactiveCommand: legacyResponse.proactiveCommand,
+            metadata: {
+              language: legacyResponse.language,
+              openaiError: null,
+              ...legacyResponse.metadata
+            }
+          };
+        }
+      }
+    : brain);
+
   const deps = {
     isApprovedPhoneNumber,
     detectLanguage,
     createIncomingConversation,
     markConversationReplied,
     markConversationFailed,
-    processUserMessage,
+    brain: injectedBrain,
     sendWhatsAppTextMessage,
     logger,
     ...dependencies
@@ -104,16 +138,49 @@ export async function routeWhatsAppMessage(message, rawPayload, dependencies = {
   }
 
   try {
-    const agentResponse = await deps.processUserMessage({
+    const brainResponse = await deps.brain.processMessage({
+      tenantId: 'default',
+      userId: message.fromPhone,
+      conversationId: String(conversation.id),
+      message: message.text,
+      metadata: {
+        language: detectedLanguage,
+        whatsappMessageId: message.whatsappMessageId,
+        profileName: message.profileName,
+        rawPayload
+      },
+      channel: 'whatsapp'
+    });
+
+    const agentResponse = {
+      replyText: brainResponse.answer,
+      language: brainResponse.metadata?.language ?? detectedLanguage,
       message: message.text,
       userPhone: message.fromPhone,
       channel: 'whatsapp',
-      language: detectedLanguage
-    });
+      memoryStored: brainResponse.memories?.stored ?? null,
+      toolNeeded: brainResponse.actions?.toolNeeded ?? null,
+      taskId: brainResponse.actions?.taskId ?? null,
+      requiresApproval: brainResponse.actions?.requiresApproval ?? false,
+      intent: brainResponse.intent,
+      agent: brainResponse.agent,
+      proactiveCommand: brainResponse.proactiveCommand,
+      metadata: {
+        memoryCount: brainResponse.memories?.loaded?.length ?? 0,
+        openaiError: brainResponse.metadata?.openaiError ?? null
+      }
+    };
 
     const whatsappResponse = await deps.sendWhatsAppTextMessage({
       to: message.fromPhone,
       text: agentResponse.replyText
+    });
+
+    deps.logger.info('response_sent', {
+      channel: 'whatsapp',
+      userId: message.fromPhone,
+      conversationId: conversation.id,
+      whatsappMessageId: message.whatsappMessageId
     });
 
     await deps.markConversationReplied({

@@ -81,7 +81,7 @@ export async function processUserMessage({
   };
 }
 
-async function handleProactiveCommand({ message, userPhone, channel, language, deps }) {
+export async function handleProactiveCommand({ message, userPhone, channel, language, deps }) {
   const command = parseProactiveCommand(message);
   if (!command) {
     return null;

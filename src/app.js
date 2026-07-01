@@ -2,13 +2,12 @@ import express from 'express';
 import helmet from 'helmet';
 import { config } from './config.js';
 import { logger } from './logger.js';
-import { extractIncomingMessages, routeWhatsAppMessage } from './channels/whatsapp.js';
+import { createChannelGatewayRegistry } from './channels/ChannelGatewayRegistry.js';
 
 export function createApp(dependencies = {}) {
   const app = express();
   const deps = {
-    extractIncomingMessages,
-    routeWhatsAppMessage,
+    channelGateways: createChannelGatewayRegistry(dependencies),
     logger,
     ...dependencies
   };
@@ -35,15 +34,22 @@ export function createApp(dependencies = {}) {
   });
 
   app.post('/webhook/whatsapp', async (req, res) => {
-    const messages = deps.extractIncomingMessages(req.body);
+    const gateway = deps.channelGateways.get('whatsapp');
+    if (!gateway) {
+      deps.logger.error('No gateway registered for webhook channel', { channel: 'whatsapp' });
+      return res.sendStatus(503);
+    }
+
+    const messages = gateway.receive(req.body);
 
     res.sendStatus(200);
 
     for (const message of messages) {
-      await deps.routeWhatsAppMessage(message, req.body).catch((error) => {
+      await gateway.acknowledge(message);
+      await gateway.handle(message).catch((error) => {
         deps.logger.error('Unhandled WhatsApp channel error', {
           error: error.message,
-          whatsappMessageId: message.whatsappMessageId
+          whatsappMessageId: message.channelMessageId
         });
       });
     }
