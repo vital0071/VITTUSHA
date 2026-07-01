@@ -55,7 +55,7 @@ src/
   memory/
     ConversationMemory.js   Brain-facing memory facade
     MemoryService.js        Public Memory Engine API
-    MemoryRepository.js     PostgreSQL repository with fallback
+    MemoryRepository.js     JSON memory provider with optional dormant PostgreSQL support
     MemoryExtractor.js      Automatic memory extraction
     MemoryRetriever.js      Relevant memory retrieval
     MemoryScorer.js         Importance/freshness/usage/confidence/relevance scoring
@@ -275,10 +275,14 @@ cp .env.example .env
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token used by `/webhook/telegram`.
 - `TELEGRAM_ALLOWED_CHAT_ID`: Telegram chat id allowed to use the MVP.
 - `DEBUG_ROUTES_ENABLED`: set to `true` only temporarily for production diagnosis.
-- `DATABASE_URL`: PostgreSQL or Supabase Postgres connection string.
+- `DATABASE_URL`: optional PostgreSQL or Supabase Postgres connection string for future activation.
 - `PGSSL`: use `true` for Supabase-hosted Postgres, usually `false` for local Postgres.
 
-4. Create the database tables:
+4. Optional PostgreSQL setup:
+
+PostgreSQL is dormant for the current Telegram MVP runtime. If `DATABASE_URL` is not configured, Vittusha still starts, serves `/health`, uses the JSON memory provider, and keeps the Telegram Memory Engine active.
+
+To prepare PostgreSQL for a future activation:
 
 ```bash
 psql "$DATABASE_URL" -f sql/schema.sql

@@ -3,8 +3,7 @@ import 'dotenv/config';
 const required = [
   'TELEGRAM_BOT_TOKEN',
   'TELEGRAM_ALLOWED_CHAT_ID',
-  'OPENAI_API_KEY',
-  'DATABASE_URL'
+  'OPENAI_API_KEY'
 ];
 
 function readEnv(name, fallback = undefined) {

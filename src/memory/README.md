@@ -5,7 +5,7 @@ Sprint 2 introduces the Memory Engine as a modular service behind the Brain. The
 ## Components
 
 - `MemoryService.js`: public API used by the Brain and future internal services.
-- `MemoryRepository.js`: PostgreSQL repository with an in-memory fallback for local resilience.
+- `MemoryRepository.js`: active JSON-style memory provider with optional dormant PostgreSQL support for future activation.
 - `MemoryExtractor.js`: rule-based automatic extraction after a full user/assistant turn.
 - `MemoryRetriever.js`: retrieves only the best candidate memories before OpenAI calls.
 - `MemoryScorer.js`: scores memories by importance, freshness, usage, confidence, and relevance.
@@ -39,7 +39,7 @@ The Brain receives a structured context with:
 
 ## SaaS Principles
 
-The Brain does not know PostgreSQL, embeddings, tags, or future vector search details. It only asks the memory module for a conversation context. This keeps the platform ready for future RAG, tenant isolation, semantic search, and richer dashboards without changing channel gateways or the Brain contract.
+The Brain does not know PostgreSQL, embeddings, tags, or future vector search details. It only asks the memory module for a conversation context. PostgreSQL remains optional and dormant unless `DATABASE_URL` is configured. This keeps the platform ready for future RAG, tenant isolation, semantic search, and richer dashboards without changing channel gateways or the Brain contract.
 
 Embeddings are prepared through `memory_embeddings`, but vector search is intentionally not implemented in Sprint 2.
 

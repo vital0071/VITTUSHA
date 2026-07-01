@@ -1,11 +1,9 @@
 import { createApp } from './app.js';
 import { assertRequiredEnv, config } from './config.js';
 import { closeDatabase } from './db.js';
-import { runDatabaseMigrations } from './database/migrations.js';
 import { logger } from './logger.js';
 
 assertRequiredEnv();
-await runDatabaseMigrations();
 
 const app = createApp();
 const server = app.listen(config.port, () => {

@@ -1,4 +1,4 @@
-import { query as defaultQuery } from '../db.js';
+import { isDatabaseEnabled, query as defaultQuery } from '../db.js';
 import { MEMORY_TYPES, isMemoryType } from './MemoryTypes.js';
 
 const fallbackState = {
@@ -10,13 +10,20 @@ const fallbackState = {
 };
 
 export class MemoryRepository {
-  constructor({ query = defaultQuery, logger, fallback = fallbackState } = {}) {
+  constructor({ query = defaultQuery, logger, fallback = fallbackState, usePostgres = null } = {}) {
     this.query = query;
     this.logger = logger;
     this.fallback = fallback;
+    this.usePostgres = usePostgres ?? (query === defaultQuery ? isDatabaseEnabled() : true);
   }
 
   async ensureUser({ userId, metadata = {} }) {
+    if (!this.usePostgres) {
+      const user = this.ensureFallbackUser({ userId, metadata });
+      this.logger?.info('memory_json_provider_active', { userId: user.id });
+      return user;
+    }
+
     try {
       const result = await this.query(
         `
@@ -39,20 +46,21 @@ export class MemoryRepository {
       return result.rows[0];
     } catch (error) {
       this.warn('memory_repository_users_fallback', error);
-      const user = {
-        id: String(userId),
-        external_id: String(userId),
-        display_name: metadata.profileName ?? metadata.firstName ?? null,
-        language: metadata.language ?? null,
-        metadata
-      };
-      this.fallback.users.set(String(userId), user);
-      return user;
+      return this.ensureFallbackUser({ userId, metadata });
     }
   }
 
   async saveMemory(memory) {
     const normalized = normalizeMemory(memory);
+
+    if (!this.usePostgres) {
+      this.logger?.info('memory_json_store_started', {
+        userId: normalized.user_id,
+        type: normalized.type,
+        title: normalized.title
+      });
+      return this.saveFallbackMemory(normalized);
+    }
 
     try {
       this.logger?.info('memory_postgres_insert_attempt', {
@@ -127,6 +135,10 @@ export class MemoryRepository {
   }
 
   async searchMemory({ userId, query = '', type = null, limit = 20, includeArchived = false }) {
+    if (!this.usePostgres) {
+      return this.searchFallbackMemory({ userId, query, type, limit, includeArchived });
+    }
+
     try {
       const terms = tokenizeQuery(query);
       const params = [String(userId), `%${query}%`, terms, includeArchived, limit];
@@ -169,6 +181,10 @@ export class MemoryRepository {
   }
 
   async updateMemory(id, updates = {}) {
+    if (!this.usePostgres) {
+      return this.updateFallbackMemory(id, updates);
+    }
+
     try {
       const result = await this.query(
         `
@@ -196,15 +212,15 @@ export class MemoryRepository {
       return result.rows[0] ?? null;
     } catch (error) {
       this.warn('memory_repository_update_fallback', error);
-      const memory = this.fallback.memories.get(String(id));
-      if (!memory) return null;
-      const updated = { ...memory, ...updates, updated_at: new Date().toISOString() };
-      this.fallback.memories.set(String(id), updated);
-      return updated;
+      return this.updateFallbackMemory(id, updates);
     }
   }
 
   async archiveMemory(id) {
+    if (!this.usePostgres) {
+      return this.updateMemory(id, { is_archived: true });
+    }
+
     try {
       const result = await this.query(
         `
@@ -224,6 +240,10 @@ export class MemoryRepository {
   }
 
   async deleteMemory(id) {
+    if (!this.usePostgres) {
+      return this.fallback.memories.delete(String(id));
+    }
+
     try {
       await this.query('DELETE FROM memories WHERE id = $1', [id]);
       return true;
@@ -235,6 +255,13 @@ export class MemoryRepository {
 
   async markMemoriesUsed(ids = []) {
     if (ids.length === 0) {
+      return;
+    }
+
+    if (!this.usePostgres) {
+      for (const id of ids) {
+        this.markFallbackMemoryUsed(id);
+      }
       return;
     }
 
@@ -251,19 +278,16 @@ export class MemoryRepository {
     } catch (error) {
       this.warn('memory_repository_mark_used_fallback', error);
       for (const id of ids) {
-        const memory = this.fallback.memories.get(String(id));
-        if (memory) {
-          this.fallback.memories.set(String(id), {
-            ...memory,
-            usage_count: Number(memory.usage_count ?? 0) + 1,
-            last_used_at: new Date().toISOString()
-          });
-        }
+        this.markFallbackMemoryUsed(id);
       }
     }
   }
 
   async saveConversationMessage({ userId, conversationId, role, content, metadata = {} }) {
+    if (!this.usePostgres) {
+      return this.saveFallbackConversationMessage({ userId, conversationId, role, content, metadata });
+    }
+
     try {
       const result = await this.query(
         `
@@ -276,24 +300,15 @@ export class MemoryRepository {
       return result.rows[0];
     } catch (error) {
       this.warn('memory_repository_conversation_fallback', error);
-      const id = String(this.fallback.nextMessageId++);
-      const row = {
-        id,
-        user_id: String(userId),
-        conversation_id: String(conversationId),
-        role,
-        content,
-        metadata,
-        created_at: new Date().toISOString()
-      };
-      const key = String(conversationId);
-      const current = this.fallback.conversationMessages.get(key) ?? [];
-      this.fallback.conversationMessages.set(key, [...current, row].slice(-50));
-      return row;
+      return this.saveFallbackConversationMessage({ userId, conversationId, role, content, metadata });
     }
   }
 
   async findRecentMessages({ userId, conversationId, limit = 20 }) {
+    if (!this.usePostgres) {
+      return (this.fallback.conversationMessages.get(String(conversationId)) ?? []).slice(-limit);
+    }
+
     try {
       const result = await this.query(
         `
@@ -314,6 +329,15 @@ export class MemoryRepository {
   }
 
   async findExistingMemory(memory) {
+    if (!this.usePostgres) {
+      return [...this.fallback.memories.values()].find((item) => (
+        item.user_id === memory.user_id &&
+        item.type === memory.type &&
+        item.title.toLowerCase() === memory.title.toLowerCase() &&
+        !item.is_archived
+      )) ?? null;
+    }
+
     const result = await this.query(
       `
         SELECT *
@@ -362,6 +386,54 @@ export class MemoryRepository {
       is_archived: false
     };
     this.fallback.memories.set(id, row);
+    return row;
+  }
+
+  ensureFallbackUser({ userId, metadata = {} }) {
+    const user = {
+      id: String(userId),
+      external_id: String(userId),
+      display_name: metadata.profileName ?? metadata.firstName ?? null,
+      language: metadata.language ?? null,
+      metadata
+    };
+    this.fallback.users.set(String(userId), user);
+    return user;
+  }
+
+  updateFallbackMemory(id, updates = {}) {
+    const memory = this.fallback.memories.get(String(id));
+    if (!memory) return null;
+    const updated = { ...memory, ...updates, updated_at: new Date().toISOString() };
+    this.fallback.memories.set(String(id), updated);
+    return updated;
+  }
+
+  markFallbackMemoryUsed(id) {
+    const memory = this.fallback.memories.get(String(id));
+    if (memory) {
+      this.fallback.memories.set(String(id), {
+        ...memory,
+        usage_count: Number(memory.usage_count ?? 0) + 1,
+        last_used_at: new Date().toISOString()
+      });
+    }
+  }
+
+  saveFallbackConversationMessage({ userId, conversationId, role, content, metadata = {} }) {
+    const id = String(this.fallback.nextMessageId++);
+    const row = {
+      id,
+      user_id: String(userId),
+      conversation_id: String(conversationId),
+      role,
+      content,
+      metadata,
+      created_at: new Date().toISOString()
+    };
+    const key = String(conversationId);
+    const current = this.fallback.conversationMessages.get(key) ?? [];
+    this.fallback.conversationMessages.set(key, [...current, row].slice(-50));
     return row;
   }
 
