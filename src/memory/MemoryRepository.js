@@ -55,8 +55,20 @@ export class MemoryRepository {
     const normalized = normalizeMemory(memory);
 
     try {
+      this.logger?.info('memory_postgres_insert_attempt', {
+        userId: normalized.user_id,
+        type: normalized.type,
+        title: normalized.title,
+        key: normalized.key
+      });
       const existing = await this.findExistingMemory(normalized);
       if (existing) {
+        this.logger?.info('memory_postgres_existing_found', {
+          userId: normalized.user_id,
+          memoryId: existing.id,
+          type: existing.type,
+          title: existing.title
+        });
         return this.updateMemory(existing.id, {
           content: normalized.content,
           importance: Math.max(Number(existing.importance ?? 0), normalized.importance),
@@ -95,8 +107,20 @@ export class MemoryRepository {
           normalized.source
         ]
       );
+      this.logger?.info('memory_postgres_insert_success', {
+        userId: result.rows[0]?.user_id,
+        memoryId: result.rows[0]?.id,
+        type: result.rows[0]?.type,
+        title: result.rows[0]?.title
+      });
       return result.rows[0];
     } catch (error) {
+      this.logger?.error('memory_postgres_insert_failed', {
+        userId: normalized.user_id,
+        type: normalized.type,
+        title: normalized.title,
+        error: error.message
+      });
       this.warn('memory_repository_save_fallback', error);
       return this.saveFallbackMemory(normalized);
     }

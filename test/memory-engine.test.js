@@ -1,11 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { MemoryExtractor } from '../src/memory/MemoryExtractor.js';
 import { MemoryRepository } from '../src/memory/MemoryRepository.js';
 import { MemoryService } from '../src/memory/MemoryService.js';
 import { MEMORY_TYPES } from '../src/memory/MemoryTypes.js';
 import { Brain } from '../src/brain/Brain.js';
 import { ConversationMemory } from '../src/memory/ConversationMemory.js';
+import { runDatabaseMigrations } from '../src/database/migrations.js';
 
 function createMemoryService(logger = { info() {}, warn() {}, error() {} }) {
   const repository = new MemoryRepository({
@@ -134,6 +138,91 @@ test('retrieves PROJECT memory for French and Creole project questions', async (
       true,
       question
     );
+  }
+});
+
+test('repository inserts PROJECT memory into PostgreSQL shape', async () => {
+  const queries = [];
+  const logger = {
+    events: [],
+    info(message, meta = {}) {
+      this.events.push({ level: 'info', message, ...meta });
+    },
+    warn() {},
+    error(message, meta = {}) {
+      this.events.push({ level: 'error', message, ...meta });
+    }
+  };
+  const repository = new MemoryRepository({
+    logger,
+    query: async (sql, params = []) => {
+      queries.push({ sql, params });
+      if (/SELECT \*/.test(sql)) {
+        return { rows: [] };
+      }
+      if (/INSERT INTO memories/.test(sql)) {
+        return {
+          rows: [{
+            id: '42',
+            user_id: params[3],
+            type: params[4],
+            title: params[5],
+            content: params[6],
+            source: params[9]
+          }]
+        };
+      }
+      return { rows: [] };
+    }
+  });
+
+  const saved = await repository.saveMemory({
+    userId: 'telegram-user-1',
+    type: MEMORY_TYPES.PROJECT,
+    title: 'Vittusha AI',
+    content: 'Vittusha AI',
+    importance: 0.85,
+    confidence: 0.8,
+    source: 'auto_extraction'
+  });
+
+  const insert = queries.find((entry) => /INSERT INTO memories/.test(entry.sql));
+  assert.equal(saved.type, MEMORY_TYPES.PROJECT);
+  assert.equal(saved.content, 'Vittusha AI');
+  assert.equal(insert.params[3], 'telegram-user-1');
+  assert.equal(insert.params[4], MEMORY_TYPES.PROJECT);
+  assert.equal(insert.params[5], 'Vittusha AI');
+  assert.equal(insert.params[6], 'Vittusha AI');
+  assert.equal(logger.events.some((event) => event.message === 'memory_postgres_insert_attempt'), true);
+  assert.equal(logger.events.some((event) => event.message === 'memory_postgres_insert_success'), true);
+});
+
+test('database migrations are applied in filename order before runtime', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'vittusha-migrations-'));
+  const migrationsDirectory = join(directory, 'migrations');
+  const applied = [];
+  const logger = { info() {}, warn() {}, error() {} };
+
+  try {
+    await mkdir(migrationsDirectory);
+    await writeFile(join(migrationsDirectory, '002_second.sql'), 'SELECT 2;');
+    await writeFile(join(migrationsDirectory, '001_first.sql'), 'SELECT 1;');
+    await writeFile(join(directory, 'schema.sql'), 'CREATE TABLE test_schema(id INT);');
+
+    const files = await runDatabaseMigrations({
+      directory: migrationsDirectory,
+      schema: join(directory, 'schema.sql'),
+      logger,
+      query: async (sql) => {
+        applied.push(sql.trim());
+        return { rows: [] };
+      }
+    });
+
+    assert.deepEqual(files, ['001_first.sql', '002_second.sql']);
+    assert.deepEqual(applied, ['CREATE TABLE test_schema(id INT);', 'SELECT 1;', 'SELECT 2;']);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

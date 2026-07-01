@@ -170,6 +170,12 @@ export class MemoryService {
       metadata
     });
 
+    this.logger?.info('memory_extraction_started', {
+      tenantId,
+      userId,
+      conversationId,
+      message
+    });
     const extracted = this.extractor.extract({
       message,
       assistantReply: answer
@@ -206,6 +212,14 @@ export class MemoryService {
     const saved = [];
 
     for (const memory of extracted) {
+      this.logger?.info('memory_store_started', {
+        tenantId,
+        userId,
+        conversationId,
+        type: memory.type,
+        title: memory.title,
+        source: memory.source
+      });
       saved.push(await this.saveMemory({
         ...memory,
         userId,
