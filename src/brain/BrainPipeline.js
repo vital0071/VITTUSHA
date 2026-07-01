@@ -33,6 +33,12 @@ export class BrainPipeline {
       intent
     });
 
+    this.logger.info('router_project_manager', {
+      tenantId: input.tenantId,
+      userId: input.userId,
+      conversationId: input.conversationId
+    });
+
     const projectResponse = await this.projectManager?.handleMessage({
       userId: input.userId,
       message: input.message,
@@ -40,6 +46,19 @@ export class BrainPipeline {
     });
 
     if (projectResponse) {
+      this.logger.info('project_manager_success', {
+        tenantId: input.tenantId,
+        userId: input.userId,
+        conversationId: input.conversationId,
+        projectIntent: projectResponse.intent
+      });
+      this.logger.info('openai_skipped', {
+        tenantId: input.tenantId,
+        userId: input.userId,
+        conversationId: input.conversationId,
+        reason: 'project_manager_intent'
+      });
+
       const storedMemories = await this.memory.append({
         tenantId: input.tenantId,
         userId: input.userId,

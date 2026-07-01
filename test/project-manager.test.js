@@ -58,7 +58,7 @@ test('handles set active project command variant', async () => {
   });
   const active = await manager.getActiveProject('user-variant');
 
-  assert.equal(response.answer, 'Projet actif défini sur ProSpace.');
+  assert.equal(response.answer, 'Projet actif défini : ProSpace.');
   assert.equal(active.name, 'ProSpace');
 });
 
@@ -89,7 +89,7 @@ test('handles French project intents without OpenAI', async () => {
     message: 'Quels sont mes projets ?'
   });
 
-  assert.equal(created.answer, 'Projet KonekteW créé.');
+  assert.equal(created.answer, 'Projet "KonekteW" créé.');
   assert.match(listed.answer, /KonekteW/);
   assert.equal(created.metadata.openaiCalled, false);
   assert.equal(logger.events.some((event) => event.message === 'project_intent_detected'), true);

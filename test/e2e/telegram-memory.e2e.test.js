@@ -274,11 +274,55 @@ test('E2E Telegram creates and lists projects through ProjectManager', async () 
     messageId: 21
   }));
 
-  assert.equal(sentReplies[0], 'Projet KonekteW créé.');
+  assert.equal(sentReplies[0], 'Projet "KonekteW" créé.');
   assert.match(sentReplies[1], /KonekteW/);
   assert.equal(openaiCallCount, 0);
+  assert.equal(logger.events.some((event) => event.message === 'intent_detected'), true);
+  assert.equal(logger.events.some((event) => event.message === 'router_project_manager'), true);
+  assert.equal(logger.events.some((event) => event.message === 'project_manager_success'), true);
+  assert.equal(logger.events.some((event) => event.message === 'openai_skipped'), true);
   assert.equal(logger.events.some((event) => event.message === 'project_intent_detected'), true);
   assert.equal(logger.events.some((event) => event.message === 'project_created'), true);
+});
+
+test('E2E Telegram create project is intercepted before OpenAI', async () => {
+  const logger = createLogger();
+  const memoryService = createMemoryService(logger);
+  const sentReplies = [];
+  let openaiCallCount = 0;
+  const brain = new Brain({
+    logger,
+    memory: new ConversationMemory({ logger, service: memoryService }),
+    projectManager: createProjectManager(logger),
+    generateReply: async () => {
+      openaiCallCount += 1;
+      throw new Error('OpenAI must never be called for create project intent.');
+    }
+  });
+
+  class CapturingTelegramGateway extends TelegramGateway {
+    async send({ reply }) {
+      sentReplies.push(reply);
+      return { reply, supported: true };
+    }
+  }
+
+  const app = createApp({
+    telegramGateway: new CapturingTelegramGateway({ brain, logger }),
+    logger
+  });
+
+  const response = await postJson(app, '/webhook/telegram', telegramTextUpdate({
+    text: 'Crée un projet appelé KonekteW',
+    messageId: 22
+  }));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(sentReplies, ['Projet "KonekteW" créé.']);
+  assert.equal(openaiCallCount, 0);
+  assert.equal(logger.events.some((event) => event.message === 'router_project_manager'), true);
+  assert.equal(logger.events.some((event) => event.message === 'project_manager_success' && event.projectIntent === 'create_project'), true);
+  assert.equal(logger.events.some((event) => event.message === 'openai_skipped' && event.reason === 'project_manager_intent'), true);
 });
 
 test('E2E Telegram answers active project through ProjectManager', async () => {
@@ -317,6 +361,7 @@ test('E2E Telegram answers active project through ProjectManager', async () => {
     messageId: 31
   }));
 
+  assert.equal(sentReplies[0], 'Projet actif défini : Vittusha AI.');
   assert.equal(sentReplies[1], 'Vous travaillez sur Vittusha AI.');
   assert.equal(openaiCallCount, 0);
   assert.equal(logger.events.some((event) => event.message === 'active_project_set'), true);

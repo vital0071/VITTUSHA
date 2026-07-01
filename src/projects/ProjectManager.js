@@ -149,12 +149,12 @@ export class ProjectManager {
 
     if (intent.type === 'create_project') {
       const project = await this.createProject(userId, intent.name, intent.description);
-      return buildProjectResponse(`Projet ${project.name} créé.`, intent.type, { project });
+      return buildProjectResponse(`Projet "${project.name}" créé.`, intent.type, { project });
     }
 
     if (intent.type === 'set_active_project') {
       const project = await this.setActiveProjectByName(userId, intent.name);
-      return buildProjectResponse(`Projet actif défini sur ${project.name}.`, intent.type, { project });
+      return buildProjectResponse(`Projet actif défini : ${project.name}.`, intent.type, { project });
     }
 
     if (intent.type === 'list_projects') {
@@ -200,7 +200,7 @@ export class ProjectManager {
 function detectProjectIntent(message = '') {
   const text = String(message).trim();
 
-  const createMatch = text.match(/\bcr[eé]e\s+(?:un\s+)?projet\s+(?:appel[eé]|nomm[eé])\s+(.+?)(?:\s*:\s*(.+))?$/i);
+  const createMatch = text.match(/\bcr[eéè]e?\s+(?:un\s+)?projet\s+(?:appel[eéè]|nomm[eéè])\s+(.+?)(?:\s*:\s*(.+))?$/i);
   if (createMatch) {
     return {
       type: 'create_project',
