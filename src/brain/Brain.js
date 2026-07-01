@@ -18,23 +18,13 @@ export class Brain {
       logger: this.logger,
       generateReply: dependencies.generateReply
     });
-    this.agent = dependencies.agent ?? new ExecutiveAgent({
+    this.contextBuilder = dependencies.contextBuilder ?? new ContextBuilder({
       memory: this.memory,
-      toolRegistry: this.toolRegistry,
-      responseGenerator: this.responseGenerator,
       logger: this.logger
     });
-    this.pipeline = dependencies.pipeline ?? new BrainPipeline({
-      contextBuilder: dependencies.contextBuilder ?? new ContextBuilder({
-        memory: this.memory,
-        logger: this.logger
-      }),
-      intentDetector: dependencies.intentDetector ?? new IntentDetector(),
-      memory: this.memory,
-      projectManager: this.projectManager,
-      agent: this.agent,
-      logger: this.logger
-    });
+    this.intentDetector = dependencies.intentDetector ?? new IntentDetector();
+    this.agent = dependencies.agent ?? null;
+    this.pipeline = dependencies.pipeline ?? null;
   }
 
   async processMessage({
@@ -45,7 +35,82 @@ export class Brain {
     message,
     metadata = {}
   }) {
-    const result = await this.pipeline.run({
+    this.logger.info('brain_started', {
+      tenantId,
+      userId,
+      channel,
+      conversationId
+    });
+
+    this.logger.info('message_received', {
+      tenantId,
+      userId,
+      channel,
+      conversationId
+    });
+
+    const intent = this.intentDetector.detect(message);
+    this.logger.info('intent_detected', {
+      tenantId,
+      userId,
+      conversationId,
+      intent
+    });
+
+    this.logger.info('router_project_manager', {
+      tenantId,
+      userId,
+      conversationId
+    });
+
+    const projectManagerResult = await this.projectManager?.handleMessage({
+      userId,
+      message,
+      memoryContext: null
+    });
+
+    if (projectManagerResult) {
+      this.logger.info('project_manager_success', {
+        tenantId,
+        userId,
+        conversationId,
+        projectIntent: projectManagerResult.intent
+      });
+      this.logger.info('openai_skipped', {
+        tenantId,
+        userId,
+        conversationId,
+        reason: 'project_manager_intent'
+      });
+      this.logger.info('project_manager_terminal', {
+        tenantId,
+        userId,
+        conversationId,
+        projectIntent: projectManagerResult.intent
+      });
+
+      return this.formatResult({
+        answer: projectManagerResult.answer,
+        intent,
+        agent: null,
+        actions: {
+          toolNeeded: null,
+          taskId: null,
+          requiresApproval: false,
+          ...projectManagerResult.actions
+        },
+        memories: {
+          loaded: [],
+          stored: null
+        },
+        metadata: {
+          openaiCalled: false,
+          ...projectManagerResult.metadata
+        }
+      });
+    }
+
+    const result = await this.getPipeline().run({
       tenantId,
       userId,
       channel,
@@ -54,6 +119,36 @@ export class Brain {
       metadata
     });
 
+    return this.formatResult(result);
+  }
+
+  getAgent() {
+    if (!this.agent) {
+      this.agent = new ExecutiveAgent({
+        memory: this.memory,
+        toolRegistry: this.toolRegistry,
+        responseGenerator: this.responseGenerator,
+        logger: this.logger
+      });
+    }
+    return this.agent;
+  }
+
+  getPipeline() {
+    if (!this.pipeline) {
+      this.pipeline = new BrainPipeline({
+        contextBuilder: this.contextBuilder,
+        intentDetector: this.intentDetector,
+        memory: this.memory,
+        projectManager: this.projectManager,
+        agent: this.getAgent(),
+        logger: this.logger
+      });
+    }
+    return this.pipeline;
+  }
+
+  formatResult(result) {
     return {
       reply: result.answer,
       answer: result.answer,

@@ -325,6 +325,40 @@ test('E2E Telegram create project is intercepted before OpenAI', async () => {
   assert.equal(logger.events.some((event) => event.message === 'openai_skipped' && event.reason === 'project_manager_intent'), true);
 });
 
+test('ProjectManager success is terminal and no later OpenAI log appears', async () => {
+  const logger = createLogger();
+  const memoryService = createMemoryService(logger);
+  const brain = new Brain({
+    logger,
+    memory: new ConversationMemory({ logger, service: memoryService }),
+    projectManager: createProjectManager(logger),
+    generateReply: async () => {
+      throw new Error('OpenAI must be unreachable after ProjectManager success.');
+    }
+  });
+
+  const response = await brain.processMessage({
+    tenantId: 'default',
+    userId: 'terminal-user',
+    channel: 'telegram',
+    conversationId: 'terminal-chat',
+    message: 'Crée un projet appelé KonekteW.',
+    metadata: { language: 'fr' }
+  });
+
+  const successIndex = logger.events.findIndex((event) => event.message === 'project_manager_success');
+  const terminalIndex = logger.events.findIndex((event) => event.message === 'project_manager_terminal');
+  const openaiAfterSuccess = logger.events
+    .slice(successIndex + 1)
+    .some((event) => event.message === 'openai_called');
+
+  assert.equal(response.reply, 'Projet "KonekteW" créé.');
+  assert.notEqual(successIndex, -1);
+  assert.notEqual(terminalIndex, -1);
+  assert.equal(openaiAfterSuccess, false);
+  assert.equal(logger.events.some((event) => event.message === 'agent_selected'), false);
+});
+
 test('E2E Telegram ProjectManager persists project state across messages', async () => {
   const logger = createLogger();
   const memoryService = createMemoryService(logger);
