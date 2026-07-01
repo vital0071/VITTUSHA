@@ -46,6 +46,9 @@ export const config = {
     enableCheckIn: readEnv('ENABLE_PROACTIVE_CHECKIN', 'false').toLowerCase() === 'true',
     checkInTime: readEnv('PROACTIVE_CHECKIN_TIME', '08:00')
   },
+  debug: {
+    routesEnabled: readEnv('DEBUG_ROUTES_ENABLED', 'false').toLowerCase() === 'true'
+  },
   databaseUrl: readEnv('DATABASE_URL'),
   pgssl: readEnv('PGSSL', 'false').toLowerCase() === 'true'
 };

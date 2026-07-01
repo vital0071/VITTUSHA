@@ -145,7 +145,11 @@ export class ExecutiveAgent {
       },
       metadata: {
         language: context.detectedLanguage,
-        openaiError: response.error?.message ?? null
+        openaiError: response.error?.message ?? null,
+        openaiCalled: response.openaiCalled ?? false,
+        responseSource: response.source ?? 'unknown',
+        directMemoryAnswer: response.directMemoryAnswer ?? null,
+        retrievedMemories: context.memoryContext?.relevantMemories ?? []
       }
     };
   }

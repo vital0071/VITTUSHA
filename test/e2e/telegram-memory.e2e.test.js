@@ -106,6 +106,45 @@ async function postJson(app, path, payload) {
   });
 }
 
+async function get(app, path) {
+  const req = Readable.from([]);
+  req.method = 'GET';
+  req.url = path;
+  req.headers = {};
+
+  return new Promise((resolve, reject) => {
+    const res = {
+      statusCode: 200,
+      headers: {},
+      body: '',
+      setHeader(name, value) {
+        this.headers[String(name).toLowerCase()] = value;
+      },
+      getHeader(name) {
+        return this.headers[String(name).toLowerCase()];
+      },
+      removeHeader(name) {
+        delete this.headers[String(name).toLowerCase()];
+      },
+      write(chunk) {
+        this.body += chunk ? String(chunk) : '';
+      },
+      end(chunk) {
+        if (chunk) {
+          this.write(chunk);
+        }
+        resolve({
+          status: this.statusCode,
+          body: this.body,
+          headers: this.headers
+        });
+      }
+    };
+
+    app.handle(req, res, reject);
+  });
+}
+
 test('E2E Telegram memory direct answer does not call OpenAI on known project question', async () => {
   const logger = createLogger();
   const memoryService = createMemoryService(logger);
@@ -159,4 +198,55 @@ test('E2E Telegram memory direct answer does not call OpenAI on known project qu
   assert.equal(logger.events.some((event) => event.message === 'direct_memory_answer_success'), true);
   assert.equal(logger.events.some((event) => event.message === 'memory_used'), true);
   assert.equal(logger.events.some((event) => event.message === 'response_sent' && event.channel === 'telegram'), true);
+});
+
+test('debug routes return 404 when disabled', async () => {
+  const app = createApp({ debugRoutesEnabled: false, logger: createLogger() });
+
+  const memoryResponse = await get(app, '/debug/memory/1989082524');
+  const brainResponse = await postJson(app, '/debug/brain-test', {
+    chatId: '1989082524',
+    message: 'Quel projet je développe ?'
+  });
+
+  assert.equal(memoryResponse.status, 404);
+  assert.equal(brainResponse.status, 404);
+});
+
+test('debug brain-test uses the same Telegram Brain pipeline and reports direct memory answer', async () => {
+  const logger = createLogger();
+  const memoryService = createMemoryService(logger);
+  let openaiCallCount = 0;
+  const brain = new Brain({
+    logger,
+    memory: new ConversationMemory({ logger, service: memoryService }),
+    generateReply: async () => {
+      openaiCallCount += 1;
+      return 'Compris.';
+    }
+  });
+  const gateway = new TelegramGateway({ brain, logger });
+  const app = createApp({
+    telegramGateway: gateway,
+    logger,
+    debugRoutesEnabled: true
+  });
+
+  await postJson(app, '/webhook/telegram', telegramTextUpdate({
+    text: 'Je développe Vittusha AI.',
+    messageId: 10
+  }));
+
+  const debugResponse = await postJson(app, '/debug/brain-test', {
+    chatId: '50912345678',
+    message: 'Quel projet je développe ?'
+  });
+  const payload = JSON.parse(debugResponse.body);
+
+  assert.equal(debugResponse.status, 200);
+  assert.equal(payload.finalReply, 'Vous développez Vittusha AI.');
+  assert.equal(payload.openaiCalled, false);
+  assert.equal(payload.directAnswerResult?.matched, true);
+  assert.equal(payload.retrievedMemories.some((memory) => memory.type === 'PROJECT'), true);
+  assert.equal(openaiCallCount, 1);
 });

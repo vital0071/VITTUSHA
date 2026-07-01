@@ -48,7 +48,20 @@ export class ResponseGenerator {
           source: 'memory'
         });
 
-        return { answer: directMemoryAnswer.answer, error: null };
+        return {
+          answer: directMemoryAnswer.answer,
+          error: null,
+          source: 'memory',
+          openaiCalled: false,
+          directMemoryAnswer: {
+            matched: true,
+            reason: directMemoryAnswer.reason,
+            matchedQuestionType: directMemoryAnswer.matchedQuestionType,
+            memory: directMemoryAnswer.memory,
+            language: directMemoryAnswer.language,
+            answer: directMemoryAnswer.answer
+          }
+        };
       }
 
       this.logger.info('memory_direct_answer_failed_reason', {
@@ -90,7 +103,18 @@ export class ResponseGenerator {
         answerLength: answer.length
       });
 
-      return { answer, error: null };
+      return {
+        answer,
+        error: null,
+        source: 'openai',
+        openaiCalled: true,
+        directMemoryAnswer: {
+          matched: false,
+          reason: directMemoryAnswer.reason,
+          matchedQuestionType: directMemoryAnswer.matchedQuestionType,
+          relevantMemoryCount: memoryContext?.relevantMemories?.length ?? 0
+        }
+      };
     } catch (error) {
       this.logger.error('openai_failed', {
         error: error.message

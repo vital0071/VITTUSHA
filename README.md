@@ -231,6 +231,30 @@ Expected: Vous développez Vittusha AI.
 
 This E2E test must fail if OpenAI is called for the second message. A sprint is not considered complete until this E2E test passes.
 
+## Temporary Debug Routes
+
+Debug routes are disabled by default. They are available only when:
+
+```bash
+DEBUG_ROUTES_ENABLED=true
+```
+
+Inspect memory state for a Telegram chat:
+
+```bash
+curl https://your-domain.example/debug/memory/1989082524
+```
+
+Run the same Brain pipeline used by Telegram:
+
+```bash
+curl -X POST https://your-domain.example/debug/brain-test \
+  -H "Content-Type: application/json" \
+  -d '{"chatId":"1989082524","message":"Quel projet je développe ?"}'
+```
+
+The debug response reports retrieved memories, the direct-memory answer result, whether OpenAI was called, and the final reply.
+
 ## Setup
 
 1. Install dependencies:
@@ -254,6 +278,7 @@ cp .env.example .env
 - `OPENAI_API_KEY`: your OpenAI API key.
 - `OPENAI_MODEL`: default is `gpt-4.1-mini`.
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token used by `/webhook/telegram`.
+- `DEBUG_ROUTES_ENABLED`: set to `true` only temporarily for production diagnosis.
 - `DATABASE_URL`: PostgreSQL or Supabase Postgres connection string.
 - `PGSSL`: use `true` for Supabase-hosted Postgres, usually `false` for local Postgres.
 - `ENABLE_PROACTIVE_CHECKIN`: default `false`; set to `true` to send the daily WhatsApp check-in.
