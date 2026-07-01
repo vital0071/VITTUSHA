@@ -74,6 +74,13 @@ async function postJson(app, path, payload) {
   };
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (payload) => {
+      if (!settled) {
+        settled = true;
+        resolve(payload);
+      }
+    };
     const res = {
       statusCode: 200,
       headers: {},
@@ -94,7 +101,7 @@ async function postJson(app, path, payload) {
         if (chunk) {
           this.write(chunk);
         }
-        resolve({
+        finish({
           status: this.statusCode,
           body: this.body,
           headers: this.headers
@@ -102,7 +109,13 @@ async function postJson(app, path, payload) {
       }
     };
 
-    app.handle(req, res, reject);
+    app.handle(req, res, (error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      finish({ status: 404, body: '', headers: res.headers });
+    });
   });
 }
 
@@ -113,6 +126,13 @@ async function get(app, path) {
   req.headers = {};
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (payload) => {
+      if (!settled) {
+        settled = true;
+        resolve(payload);
+      }
+    };
     const res = {
       statusCode: 200,
       headers: {},
@@ -133,7 +153,7 @@ async function get(app, path) {
         if (chunk) {
           this.write(chunk);
         }
-        resolve({
+        finish({
           status: this.statusCode,
           body: this.body,
           headers: this.headers
@@ -141,7 +161,13 @@ async function get(app, path) {
       }
     };
 
-    app.handle(req, res, reject);
+    app.handle(req, res, (error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      finish({ status: 404, body: '', headers: res.headers });
+    });
   });
 }
 
@@ -211,6 +237,16 @@ test('debug routes return 404 when disabled', async () => {
 
   assert.equal(memoryResponse.status, 404);
   assert.equal(brainResponse.status, 404);
+});
+
+test('WhatsApp webhook is inactive in the Telegram-only MVP runtime', async () => {
+  const app = createApp({ logger: createLogger() });
+
+  const getResponse = await get(app, '/webhook/whatsapp');
+  const postResponse = await postJson(app, '/webhook/whatsapp', {});
+
+  assert.equal(getResponse.status, 404);
+  assert.equal(postResponse.status, 404);
 });
 
 test('debug brain-test uses the same Telegram Brain pipeline and reports direct memory answer', async () => {

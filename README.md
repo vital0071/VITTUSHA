@@ -1,12 +1,11 @@
 # Vittusha AI Platform - Sprint 2 Memory Engine
 
-Node.js + Express service that receives channel messages, routes them into the Vittusha Brain, replies on the active messaging channel, and stores conversations, memories, and approval-gated tasks in PostgreSQL or Supabase.
+Node.js + Express service that receives Telegram messages, routes them into the Vittusha Brain, replies through Telegram, and stores conversations, memories, and approval-gated tasks in PostgreSQL or Supabase.
 
 ## Features
 
-- Meta WhatsApp Cloud API webhook verification.
-- Incoming WhatsApp text message handling.
-- Private phone allowlist with `APPROVED_PHONE_NUMBER`.
+- Telegram webhook handling.
+- Telegram chat allowlist with `TELEGRAM_ALLOWED_CHAT_ID`.
 - OpenAI Responses API integration.
 - Brain Foundation with a central `processMessage()` contract.
 - ExecutiveAgent as the default agent.
@@ -18,7 +17,7 @@ Node.js + Express service that receives channel messages, routes them into the V
 - Intent detection for `greeting`, `question`, `task`, `research`, `action`, and `conversation`.
 - Task planner for approval-gated actions.
 - Placeholder tool registry for Gmail, Google Maps, HubSpot, browser, and calendar.
-- Phase 5 Light proactive assistant with suggestions and opt-in daily check-in.
+- Phase 5 Light proactive assistant with suggestions.
 - Automatic language detection with priority: Haitian Creole, French, English.
 - Replies in the user's detected or dominant language, defaulting to Haitian Creole.
 - Editable system prompt in `src/prompts/system-prompt.md`.
@@ -48,9 +47,9 @@ src/
     ChannelGateway.js       Gateway interface: receive/send/typing/acknowledge
     ChannelGatewayRegistry.js
     MetaWhatsAppCloudGateway.js
-                             Current Meta webhook compatibility gateway
-    WhatsAppGateway.js      Empty future placeholder, intentionally unused
-    whatsapp.js             WhatsApp send/receive boundary that calls Brain
+                             Legacy dormant Meta/WhatsApp gateway, not loaded at runtime
+    WhatsAppGateway.js      Legacy placeholder, intentionally unused
+    whatsapp.js             Legacy dormant WhatsApp helpers, not loaded at runtime
     telegram/
       TelegramGateway.js    Telegram normalization gateway for the target channel
   memory/
@@ -67,7 +66,7 @@ src/
     memory-store.js         Legacy memory helpers kept for compatibility
   prompts/system-prompt.md  Editable assistant behavior prompt
   proactive-engine.js       Pending work analysis and daily summaries
-  scheduler/checkin.js      Optional daily WhatsApp check-in scheduler
+  scheduler/checkin.js      Legacy dormant check-in scheduler, not loaded at runtime
   services/
     conversations.js        Database writes
     language.js             Language detection helper
@@ -136,7 +135,7 @@ flowchart TD
 }
 ```
 
-Current production routing still supports the existing Meta WhatsApp webhook through `MetaWhatsAppCloudGateway`. `src/channels/telegram/TelegramGateway.js` is present as the target Telegram gateway boundary and follows the same gateway contract.
+Current MVP runtime supports Telegram only. Meta/WhatsApp modules are legacy dormant code and are not loaded at startup.
 
 Technical comment: this architecture keeps all channel-specific concerns outside the Brain. A future Web App, public API, Discord bot, Slack app, or Mobile App only needs a gateway that implements:
 
@@ -271,18 +270,13 @@ cp .env.example .env
 
 3. Fill in `.env`:
 
-- `META_VERIFY_TOKEN`: random token you choose for Meta webhook verification.
-- `META_ACCESS_TOKEN`: WhatsApp Cloud API permanent or temporary access token.
-- `META_PHONE_NUMBER_ID`: WhatsApp Cloud API phone number ID.
-- `APPROVED_PHONE_NUMBER`: your private WhatsApp number in international format, for example `+509XXXXXXXX`.
 - `OPENAI_API_KEY`: your OpenAI API key.
 - `OPENAI_MODEL`: default is `gpt-4.1-mini`.
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token used by `/webhook/telegram`.
+- `TELEGRAM_ALLOWED_CHAT_ID`: Telegram chat id allowed to use the MVP.
 - `DEBUG_ROUTES_ENABLED`: set to `true` only temporarily for production diagnosis.
 - `DATABASE_URL`: PostgreSQL or Supabase Postgres connection string.
 - `PGSSL`: use `true` for Supabase-hosted Postgres, usually `false` for local Postgres.
-- `ENABLE_PROACTIVE_CHECKIN`: default `false`; set to `true` to send the daily WhatsApp check-in.
-- `PROACTIVE_CHECKIN_TIME`: default `08:00`.
 
 4. Create the database tables:
 
@@ -356,7 +350,7 @@ The Brain logs these lifecycle events:
 - `response_generated`
 - `response_sent`
 
-## Meta WhatsApp Webhook
+## Telegram Webhook
 
 Expose your local server with a tunnel such as ngrok:
 
@@ -364,17 +358,13 @@ Expose your local server with a tunnel such as ngrok:
 ngrok http 3000
 ```
 
-In Meta Developer settings, configure:
+Configure Telegram to call:
 
-- Callback URL: `https://your-domain.example/webhook/whatsapp`
-- Verify token: same value as `META_VERIFY_TOKEN`
-- Subscribe to WhatsApp `messages` webhook events.
+- Webhook URL: `https://your-domain.example/webhook/telegram`
 
 ## Endpoints
 
 - `GET /health`: health check.
-- `GET /webhook/whatsapp`: Meta webhook verification.
-- `POST /webhook/whatsapp`: receives WhatsApp messages.
 - `POST /webhook/telegram`: receives Telegram updates and routes them through `TelegramGateway -> Brain -> Memory Engine -> DirectMemoryAnswer -> OpenAI fallback`.
 
 ## Language Behavior
@@ -459,7 +449,7 @@ No real Gmail, Google Maps, HubSpot, browser, or calendar APIs are implemented y
 
 Phase 5 Light adds suggestions. The agent can notice pending work, blocked tasks, unapproved tasks, pending suggestions, and recent conversations. It can suggest next actions, but it cannot execute external actions.
 
-WhatsApp commands:
+Telegram commands:
 
 - `Kisa m dwe fè jodi a?`
 - `Montre m suggestions yo`
@@ -480,15 +470,6 @@ Suggestion priorities:
 - `medium`
 - `high`
 
-Daily proactive check-in is disabled by default. To enable it:
-
-```env
-ENABLE_PROACTIVE_CHECKIN=true
-PROACTIVE_CHECKIN_TIME=08:00
-```
-
-When enabled, the server sends the daily summary through WhatsApp to `APPROVED_PHONE_NUMBER`. The summary is advisory only and does not perform Gmail, Google Maps, HubSpot, browser, calendar, publishing, CRM, lead contact, or scheduling actions.
-
 You can edit assistant behavior anytime in:
 
 ```text
@@ -497,7 +478,7 @@ src/prompts/system-prompt.md
 
 ## Database
 
-Each approved incoming WhatsApp message creates one `conversations` record. The record is updated after WhatsApp reply delivery.
+Each approved incoming Telegram message creates conversation and memory records through the Brain and Memory Engine.
 
 Important columns:
 
@@ -510,7 +491,6 @@ Important columns:
 - `task_id`
 - `status`
 - `raw_payload`
-- `whatsapp_response`
 
 Additional tables:
 
@@ -518,7 +498,7 @@ Additional tables:
 - `tasks`
 - `suggestions`
 
-Unauthorized phone numbers are rejected before OpenAI and database writes.
+Unauthorized Telegram chat ids are rejected before OpenAI and database writes.
 
 ## Verification
 

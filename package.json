@@ -1,7 +1,7 @@
 {
-  "name": "whatsapp-ai-assistant",
+  "name": "vittusha-ai-platform",
   "version": "0.1.0",
-  "description": "Private WhatsApp AI assistant using Meta WhatsApp Cloud API, OpenAI API, Express, and PostgreSQL.",
+  "description": "Vittusha AI Platform MVP using Telegram, OpenAI, PostgreSQL, and Memory Engine.",
   "type": "module",
   "main": "src/server.js",
   "scripts": {

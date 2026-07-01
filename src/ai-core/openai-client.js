@@ -60,7 +60,7 @@ export async function generateAssistantReply({
         toolText,
         taskText,
         'If the Memory Engine Context contains a direct answer to the user question, use that memory confidently. Do not ask the user to repeat information already present in memory.',
-        'Return a concise WhatsApp-friendly answer. If a placeholder tool would be needed, say which tool is needed and ask for approval. Do not say you performed the action.'
+        'Return a concise Telegram-friendly answer. If a placeholder tool would be needed, say which tool is needed and ask for approval. Do not say you performed the action.'
       ].join('\n\n'),
       input: userMessage,
       max_output_tokens: config.openai.maxOutputTokens,

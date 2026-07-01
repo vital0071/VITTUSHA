@@ -88,6 +88,15 @@ export class TelegramGateway extends ChannelGateway {
   }
 
   async handle(normalized) {
+    if (config.telegram.allowedChatId && normalized.conversationId !== config.telegram.allowedChatId) {
+      this.logger.warn('telegram_rejected_unauthorized_chat', {
+        channel: 'telegram',
+        userId: normalized.userId,
+        conversationId: normalized.conversationId
+      });
+      return { status: 'rejected' };
+    }
+
     this.logger.info('telegram_received', {
       channel: 'telegram',
       userId: normalized.userId,

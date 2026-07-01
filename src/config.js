@@ -1,10 +1,8 @@
 import 'dotenv/config';
 
 const required = [
-  'META_VERIFY_TOKEN',
-  'META_ACCESS_TOKEN',
-  'META_PHONE_NUMBER_ID',
-  'APPROVED_PHONE_NUMBER',
+  'TELEGRAM_BOT_TOKEN',
+  'TELEGRAM_ALLOWED_CHAT_ID',
   'OPENAI_API_KEY',
   'DATABASE_URL'
 ];
@@ -27,24 +25,14 @@ export function assertRequiredEnv() {
 export const config = {
   nodeEnv: readEnv('NODE_ENV', 'development'),
   port: Number(readEnv('PORT', '3000')),
-  meta: {
-    verifyToken: readEnv('META_VERIFY_TOKEN'),
-    accessToken: readEnv('META_ACCESS_TOKEN'),
-    phoneNumberId: readEnv('META_PHONE_NUMBER_ID'),
-    graphApiVersion: readEnv('META_GRAPH_API_VERSION', 'v21.0')
-  },
   telegram: {
-    botToken: readEnv('TELEGRAM_BOT_TOKEN')
+    botToken: readEnv('TELEGRAM_BOT_TOKEN'),
+    allowedChatId: readEnv('TELEGRAM_ALLOWED_CHAT_ID')
   },
-  approvedPhoneNumber: readEnv('APPROVED_PHONE_NUMBER'),
   openai: {
     apiKey: readEnv('OPENAI_API_KEY'),
     model: readEnv('OPENAI_MODEL', 'gpt-4.1-mini'),
     maxOutputTokens: Number(readEnv('OPENAI_MAX_OUTPUT_TOKENS', '700'))
-  },
-  proactive: {
-    enableCheckIn: readEnv('ENABLE_PROACTIVE_CHECKIN', 'false').toLowerCase() === 'true',
-    checkInTime: readEnv('PROACTIVE_CHECKIN_TIME', '08:00')
   },
   debug: {
     routesEnabled: readEnv('DEBUG_ROUTES_ENABLED', 'false').toLowerCase() === 'true'
@@ -58,5 +46,5 @@ export function normalizePhoneNumber(value = '') {
 }
 
 export function isApprovedPhoneNumber(value) {
-  return normalizePhoneNumber(value) === normalizePhoneNumber(config.approvedPhoneNumber);
+  return false;
 }
