@@ -55,5 +55,27 @@ export function createApp(dependencies = {}) {
     }
   });
 
+  app.post('/webhook/telegram', async (req, res) => {
+    const gateway = deps.channelGateways.get('telegram');
+    if (!gateway) {
+      deps.logger.error('No gateway registered for webhook channel', { channel: 'telegram' });
+      return res.sendStatus(503);
+    }
+
+    const messages = gateway.receive(req.body);
+
+    for (const message of messages) {
+      await gateway.acknowledge(message);
+      await gateway.handle(message).catch((error) => {
+        deps.logger.error('Unhandled Telegram channel error', {
+          error: error.message,
+          telegramMessageId: message.metadata?.telegramMessageId
+        });
+      });
+    }
+
+    return res.sendStatus(200);
+  });
+
   return app;
 }

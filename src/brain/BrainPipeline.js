@@ -7,6 +7,13 @@ export class BrainPipeline {
   }
 
   async run(input) {
+    this.logger.info('brain_started', {
+      tenantId: input.tenantId,
+      userId: input.userId,
+      channel: input.channel,
+      conversationId: input.conversationId
+    });
+
     this.logger.info('message_received', {
       tenantId: input.tenantId,
       userId: input.userId,

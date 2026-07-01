@@ -33,6 +33,9 @@ export const config = {
     phoneNumberId: readEnv('META_PHONE_NUMBER_ID'),
     graphApiVersion: readEnv('META_GRAPH_API_VERSION', 'v21.0')
   },
+  telegram: {
+    botToken: readEnv('TELEGRAM_BOT_TOKEN')
+  },
   approvedPhoneNumber: readEnv('APPROVED_PHONE_NUMBER'),
   openai: {
     apiKey: readEnv('OPENAI_API_KEY'),

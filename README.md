@@ -253,6 +253,7 @@ cp .env.example .env
 - `APPROVED_PHONE_NUMBER`: your private WhatsApp number in international format, for example `+509XXXXXXXX`.
 - `OPENAI_API_KEY`: your OpenAI API key.
 - `OPENAI_MODEL`: default is `gpt-4.1-mini`.
+- `TELEGRAM_BOT_TOKEN`: Telegram bot token used by `/webhook/telegram`.
 - `DATABASE_URL`: PostgreSQL or Supabase Postgres connection string.
 - `PGSSL`: use `true` for Supabase-hosted Postgres, usually `false` for local Postgres.
 - `ENABLE_PROACTIVE_CHECKIN`: default `false`; set to `true` to send the daily WhatsApp check-in.
@@ -349,6 +350,7 @@ In Meta Developer settings, configure:
 - `GET /health`: health check.
 - `GET /webhook/whatsapp`: Meta webhook verification.
 - `POST /webhook/whatsapp`: receives WhatsApp messages.
+- `POST /webhook/telegram`: receives Telegram updates and routes them through `TelegramGateway -> Brain -> Memory Engine -> DirectMemoryAnswer -> OpenAI fallback`.
 
 ## Language Behavior
 

@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { Readable } from 'node:stream';
+import { createApp } from '../../src/app.js';
 import { Brain } from '../../src/brain/Brain.js';
 import { TelegramGateway } from '../../src/channels/telegram/TelegramGateway.js';
 import { ConversationMemory } from '../../src/memory/ConversationMemory.js';
@@ -60,6 +62,50 @@ function telegramTextUpdate({ text, messageId }) {
   };
 }
 
+async function postJson(app, path, payload) {
+  const body = JSON.stringify(payload);
+  const bodyBuffer = Buffer.from(body);
+  const req = Readable.from([bodyBuffer]);
+  req.method = 'POST';
+  req.url = path;
+  req.headers = {
+    'content-type': 'application/json',
+    'content-length': bodyBuffer.length
+  };
+
+  return new Promise((resolve, reject) => {
+    const res = {
+      statusCode: 200,
+      headers: {},
+      body: '',
+      setHeader(name, value) {
+        this.headers[String(name).toLowerCase()] = value;
+      },
+      getHeader(name) {
+        return this.headers[String(name).toLowerCase()];
+      },
+      removeHeader(name) {
+        delete this.headers[String(name).toLowerCase()];
+      },
+      write(chunk) {
+        this.body += chunk ? String(chunk) : '';
+      },
+      end(chunk) {
+        if (chunk) {
+          this.write(chunk);
+        }
+        resolve({
+          status: this.statusCode,
+          body: this.body,
+          headers: this.headers
+        });
+      }
+    };
+
+    app.handle(req, res, reject);
+  });
+}
+
 test('E2E Telegram memory direct answer does not call OpenAI on known project question', async () => {
   const logger = createLogger();
   const memoryService = createMemoryService(logger);
@@ -87,25 +133,30 @@ test('E2E Telegram memory direct answer does not call OpenAI on known project qu
   }
 
   const gateway = new CapturingTelegramGateway({ brain, logger });
+  const app = createApp({ telegramGateway: gateway, logger });
 
-  await gateway.processUpdate(telegramTextUpdate({
+  const firstResponse = await postJson(app, '/webhook/telegram', telegramTextUpdate({
     text: 'Je développe Vittusha AI.',
     messageId: 1
   }));
+  assert.equal(firstResponse.status, 200);
 
   shouldFailIfOpenAIIsCalled = true;
-  const response = await gateway.processUpdate(telegramTextUpdate({
+  const secondResponse = await postJson(app, '/webhook/telegram', telegramTextUpdate({
     text: 'Quel projet je développe ?',
     messageId: 2
   }));
+  assert.equal(secondResponse.status, 200);
 
-  assert.equal(response.reply, 'Vous développez Vittusha AI.');
   assert.deepEqual(sentReplies, ['Compris.', 'Vous développez Vittusha AI.']);
   assert.equal(openaiCallCount, 1);
+  assert.equal(logger.events.some((event) => event.message === 'telegram_received'), true);
+  assert.equal(logger.events.some((event) => event.message === 'brain_started' && event.channel === 'telegram'), true);
   assert.equal(logger.events.some((event) => event.message === 'message_received' && event.channel === 'telegram'), true);
   assert.equal(logger.events.some((event) => event.message === 'memory_extraction'), true);
   assert.equal(logger.events.some((event) => event.message === 'memory_lookup'), true);
   assert.equal(logger.events.some((event) => event.message === 'direct_memory_answer_attempt'), true);
   assert.equal(logger.events.some((event) => event.message === 'direct_memory_answer_success'), true);
   assert.equal(logger.events.some((event) => event.message === 'memory_used'), true);
+  assert.equal(logger.events.some((event) => event.message === 'response_sent' && event.channel === 'telegram'), true);
 });
