@@ -1,7 +1,9 @@
 export class BrainPipeline {
-  constructor({ contextBuilder, intentDetector, agent, logger }) {
+  constructor({ contextBuilder, intentDetector, memory, projectManager, agent, logger }) {
     this.contextBuilder = contextBuilder;
     this.intentDetector = intentDetector;
+    this.memory = memory;
+    this.projectManager = projectManager;
     this.agent = agent;
     this.logger = logger;
   }
@@ -30,6 +32,55 @@ export class BrainPipeline {
       conversationId: input.conversationId,
       intent
     });
+
+    const projectResponse = await this.projectManager?.handleMessage({
+      userId: input.userId,
+      message: input.message,
+      memoryContext: context.memoryContext
+    });
+
+    if (projectResponse) {
+      const storedMemories = await this.memory.append({
+        tenantId: input.tenantId,
+        userId: input.userId,
+        conversationId: input.conversationId,
+        message: input.message,
+        answer: projectResponse.answer,
+        metadata: {
+          intent,
+          language: context.detectedLanguage,
+          projectIntent: projectResponse.intent
+        }
+      });
+
+      this.logger.info('response_generated', {
+        answerLength: projectResponse.answer.length,
+        source: 'project_manager'
+      });
+
+      return {
+        answer: projectResponse.answer,
+        intent,
+        agent: null,
+        actions: {
+          toolNeeded: null,
+          taskId: null,
+          requiresApproval: false,
+          ...projectResponse.actions
+        },
+        memories: {
+          loaded: context.memories,
+          stored: storedMemories
+        },
+        metadata: {
+          language: context.detectedLanguage,
+          openaiError: null,
+          openaiCalled: false,
+          retrievedMemories: context.memoryContext?.relevantMemories ?? [],
+          ...projectResponse.metadata
+        }
+      };
+    }
 
     this.logger.info('agent_selected', {
       tenantId: input.tenantId,

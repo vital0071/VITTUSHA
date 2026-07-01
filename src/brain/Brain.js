@@ -20,7 +20,6 @@ export class Brain {
     });
     this.agent = dependencies.agent ?? new ExecutiveAgent({
       memory: this.memory,
-      projectManager: this.projectManager,
       toolRegistry: this.toolRegistry,
       responseGenerator: this.responseGenerator,
       logger: this.logger
@@ -31,6 +30,8 @@ export class Brain {
         logger: this.logger
       }),
       intentDetector: dependencies.intentDetector ?? new IntentDetector(),
+      memory: this.memory,
+      projectManager: this.projectManager,
       agent: this.agent,
       logger: this.logger
     });
