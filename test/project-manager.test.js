@@ -62,6 +62,22 @@ test('handles set active project command variant', async () => {
   assert.equal(active.name, 'ProSpace');
 });
 
+test('created project becomes active when no active project exists', async () => {
+  const manager = createProjectManager();
+
+  await manager.handleMessage({
+    userId: 'user-created-active',
+    message: 'Crée un projet appelé KonekteW.'
+  });
+  const response = await manager.handleMessage({
+    userId: 'user-created-active',
+    message: 'Quel est mon projet actif ?'
+  });
+
+  assert.match(response.answer, /KonekteW/);
+  assert.equal(response.metadata.openaiCalled, false);
+});
+
 test('adds notes and builds project context', async () => {
   const logger = createLogger();
   const manager = createProjectManager(logger);

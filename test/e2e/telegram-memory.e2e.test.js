@@ -325,6 +325,59 @@ test('E2E Telegram create project is intercepted before OpenAI', async () => {
   assert.equal(logger.events.some((event) => event.message === 'openai_skipped' && event.reason === 'project_manager_intent'), true);
 });
 
+test('E2E Telegram ProjectManager persists project state across messages', async () => {
+  const logger = createLogger();
+  const memoryService = createMemoryService(logger);
+  const sentReplies = [];
+  let openaiCallCount = 0;
+  const brain = new Brain({
+    logger,
+    memory: new ConversationMemory({ logger, service: memoryService }),
+    projectManager: createProjectManager(logger),
+    generateReply: async () => {
+      openaiCallCount += 1;
+      throw new Error('OpenAI must not be called for ProjectManager persistence flow.');
+    }
+  });
+
+  class CapturingTelegramGateway extends TelegramGateway {
+    async send({ reply }) {
+      sentReplies.push(reply);
+      return { reply, supported: true };
+    }
+  }
+
+  const app = createApp({
+    telegramGateway: new CapturingTelegramGateway({ brain, logger }),
+    logger
+  });
+
+  await postJson(app, '/webhook/telegram', telegramTextUpdate({
+    text: 'Crée un projet appelé KonekteW.',
+    messageId: 23
+  }));
+  await postJson(app, '/webhook/telegram', telegramTextUpdate({
+    text: 'Quels sont mes projets ?',
+    messageId: 24
+  }));
+  await postJson(app, '/webhook/telegram', telegramTextUpdate({
+    text: 'Quel est mon projet actif ?',
+    messageId: 25
+  }));
+  await postJson(app, '/webhook/telegram', telegramTextUpdate({
+    text: 'Sur quel projet je travaille ?',
+    messageId: 26
+  }));
+
+  assert.equal(sentReplies[0], 'Projet "KonekteW" créé.');
+  assert.match(sentReplies[1], /KonekteW/);
+  assert.match(sentReplies[2], /KonekteW/);
+  assert.match(sentReplies[3], /KonekteW/);
+  assert.equal(openaiCallCount, 0);
+  assert.equal(logger.events.filter((event) => event.message === 'openai_skipped').length, 4);
+  assert.equal(logger.events.some((event) => event.message === 'active_project_set' && event.name === 'KonekteW'), true);
+});
+
 test('E2E Telegram answers active project through ProjectManager', async () => {
   const logger = createLogger();
   const memoryService = createMemoryService(logger);

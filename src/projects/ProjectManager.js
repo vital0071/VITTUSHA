@@ -24,6 +24,9 @@ export class ProjectManager {
     const projects = this.getUserProjects(userId);
     const existing = findProjectByName(projects, project.name);
     if (existing) {
+      if (!await this.getActiveProject(userId)) {
+        await this.setActiveProject(userId, existing.id);
+      }
       return existing;
     }
 
@@ -37,6 +40,9 @@ export class ProjectManager {
       provider: 'json',
       operation: 'createProject'
     });
+    if (!await this.getActiveProject(userId)) {
+      await this.setActiveProject(userId, project.id);
+    }
     return project;
   }
 
@@ -230,7 +236,7 @@ function detectProjectIntent(message = '') {
     return { type: 'list_projects' };
   }
 
-  if (/\bsur\s+quel\s+projet\s+je\s+travaille\s*\??$/i.test(text)) {
+  if (/\bsur\s+quel\s+projet\s+je\s+travaille\s*\??$/i.test(text) || /\bquel\s+est\s+mon\s+projet\s+actif\s*\??$/i.test(text)) {
     return { type: 'active_project_question' };
   }
 
