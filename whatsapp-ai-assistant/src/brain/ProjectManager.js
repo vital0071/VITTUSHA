@@ -49,12 +49,19 @@ export class ProjectManager {
 
     if (/\b(?:contexte|context|note|notes|que sais-tu|qu'est-ce que tu sais)\b/i.test(text) && projectState.activeProject) {
       const replyText = buildContextReply(projectState);
+      const directAnswerResult = buildProjectDirectAnswer({
+        input,
+        projectState,
+        answer: replyText,
+        matchedQuestionType: 'project_context'
+      });
 
       return this.response(input, replyText, {
         intent: 'project_context',
         activeProject: projectState.activeProject,
         projects: [...projectState.projects.values()],
-        contextNotes: [...projectState.contextNotes]
+        contextNotes: [...projectState.contextNotes],
+        directAnswerResult
       });
     }
 
@@ -102,6 +109,9 @@ export class ProjectManager {
     return {
       handled: true,
       replyText,
+      finalReply: replyText,
+      openaiCalled: false,
+      directAnswerResult: metadata.directAnswerResult ?? null,
       language: input.language,
       channel: input.channel,
       userPhone: input.userPhone,
@@ -131,4 +141,25 @@ function buildContextReply(projectState) {
   }
 
   return projectState.contextNotes.join('\n');
+}
+
+function buildProjectDirectAnswer({ input, projectState, answer, matchedQuestionType }) {
+  return {
+    matched: true,
+    reason: 'matched_project_memory',
+    matchedQuestionType,
+    answer,
+    language: input.language,
+    project: {
+      name: projectState.activeProject,
+      active: true,
+      contextNotes: [...projectState.contextNotes]
+    },
+    memory: {
+      type: 'PROJECT',
+      value: projectState.contextNotes.length === 0
+        ? `Project: ${projectState.activeProject}`
+        : projectState.contextNotes.join('\n')
+    }
+  };
 }

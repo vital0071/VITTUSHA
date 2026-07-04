@@ -44,6 +44,8 @@ function normalizeHandledResponse(response) {
     replyText: reply,
     response: reply,
     text: reply,
-    message: reply
+    message: reply,
+    finalReply: response.finalReply ?? reply,
+    openaiCalled: response.openaiCalled ?? false
   };
 }
