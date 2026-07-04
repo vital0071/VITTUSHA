@@ -148,3 +148,54 @@ test('Sprint 3 ProjectManager returns normalized Telegram response strings', asy
   assert.equal(context.agentResponse.replyText, 'Vous développez Vittusha AI.');
   assert.equal(sent.at(-1).text, 'Vous développez Vittusha AI.');
 });
+
+test('Sprint 3 ProjectManager context answer is derived from the matched project memory', async () => {
+  const sent = [];
+  const chatId = `sprint3-memory-${Date.now()}`;
+  let conversationId = 300;
+
+  const deps = {
+    isApprovedTelegramChat: () => true,
+    createIncomingConversation: async () => ({ id: conversationId++ }),
+    sendTelegramTextMessage: async (input) => {
+      sent.push(input);
+      return { ok: true };
+    },
+    markConversationReplied: async () => {},
+    markConversationFailed: async () => {},
+    logger: {
+      info() {},
+      warn() {},
+      error() {}
+    },
+    agentDependencies: {
+      ensureCoreMemories: async () => {
+        throw new Error('Generic fallback should not run.');
+      },
+      generateAssistantReply: async () => {
+        throw new Error('OpenAI should not be called.');
+      }
+    }
+  };
+
+  await routeTelegramMessage({
+    telegramMessageId: 1,
+    chatId,
+    userId: chatId,
+    profileName: 'Vital',
+    text: 'Crée un projet appelé Atlas CRM'
+  }, {}, deps);
+
+  const context = await routeTelegramMessage({
+    telegramMessageId: 2,
+    chatId,
+    userId: chatId,
+    profileName: 'Vital',
+    text: 'Quel est le contexte du projet ?'
+  }, {}, deps);
+
+  assert.equal(context.agentResponse.replyText, 'Vous développez Atlas CRM.');
+  assert.equal(sent.at(-1).text, 'Vous développez Atlas CRM.');
+  assert.notEqual(context.agentResponse.replyText, 'Compris.');
+  assert.notEqual(context.agentResponse.replyText, 'OK');
+});

@@ -48,9 +48,7 @@ export class ProjectManager {
     }
 
     if (/\b(?:contexte|context|note|notes|que sais-tu|qu'est-ce que tu sais)\b/i.test(text) && projectState.activeProject) {
-      const replyText = projectState.activeProject.toLowerCase() === 'vittusha ai'
-        ? 'Vous développez Vittusha AI.'
-        : buildContextReply(projectState);
+      const replyText = buildContextReply(projectState);
 
       return this.response(input, replyText, {
         intent: 'project_context',
@@ -129,7 +127,7 @@ function cleanProjectName(value) {
 
 function buildContextReply(projectState) {
   if (projectState.contextNotes.length === 0) {
-    return `Aucun contexte enregistré pour ${projectState.activeProject}.`;
+    return `Vous développez ${projectState.activeProject}.`;
   }
 
   return projectState.contextNotes.join('\n');
