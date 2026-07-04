@@ -112,19 +112,29 @@ export async function routeTelegramMessage(message, rawPayload, dependencies = {
 
     const agentResponse = await deps.processUserMessage(agentInput);
 
+    const replyText = normalizeAgentReply(agentResponse);
     const telegramResponse = await deps.sendTelegramTextMessage({
       chatId: message.chatId,
-      text: agentResponse.replyText
+      text: replyText
     });
 
     await deps.markConversationReplied({
       id: conversation.id,
-      assistantReply: agentResponse.replyText,
+      assistantReply: replyText,
       whatsappResponse: telegramResponse,
-      agentResponse
+      agentResponse: {
+        ...agentResponse,
+        replyText
+      }
     });
 
-    return { status: 'replied', agentResponse };
+    return {
+      status: 'replied',
+      agentResponse: {
+        ...agentResponse,
+        replyText
+      }
+    };
   } catch (error) {
     await deps.markConversationFailed({
       id: conversation.id,
@@ -132,4 +142,12 @@ export async function routeTelegramMessage(message, rawPayload, dependencies = {
     });
     throw error;
   }
+}
+
+function normalizeAgentReply(agentResponse) {
+  const reply = agentResponse?.replyText ?? agentResponse?.response ?? agentResponse?.text ?? agentResponse?.message;
+  if (typeof reply !== 'string' || reply.length === 0) {
+    throw new Error('AI Core returned a response without a string reply.');
+  }
+  return reply;
 }

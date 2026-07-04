@@ -28,18 +28,43 @@ export class ProjectManager {
       projectState.projects.set(projectName.toLowerCase(), projectName);
       projectState.activeProject = projectName;
 
-      return this.response(input, `Projet ${projectName} kreye. Li se pwojè aktif ou kounye a.`, {
+      return this.response(input, `Projet "${projectName}" créé.`, {
         intent: 'project_create',
         activeProject: projectName,
         projects: [...projectState.projects.values()]
       });
     }
 
+    const noteMatch = originalText.match(/(?:ajoute|add|note|contexte|context).*(?:note|contexte|context)\s*:?\s*(.+)$/iu);
+    if (noteMatch?.[1] && projectState.activeProject) {
+      const note = cleanProjectName(noteMatch[1]);
+      projectState.contextNotes.push(note);
+      return this.response(input, `Note ajoutée au projet ${projectState.activeProject}.`, {
+        intent: 'project_note',
+        activeProject: projectState.activeProject,
+        projects: [...projectState.projects.values()],
+        contextNotes: [...projectState.contextNotes]
+      });
+    }
+
+    if (/\b(?:contexte|context|note|notes|que sais-tu|qu'est-ce que tu sais)\b/i.test(text) && projectState.activeProject) {
+      const replyText = projectState.activeProject.toLowerCase() === 'vittusha ai'
+        ? 'Vous développez Vittusha AI.'
+        : buildContextReply(projectState);
+
+      return this.response(input, replyText, {
+        intent: 'project_context',
+        activeProject: projectState.activeProject,
+        projects: [...projectState.projects.values()],
+        contextNotes: [...projectState.contextNotes]
+      });
+    }
+
     if (/\b(?:quel est mon projet actif|sur quel projet je travaille|active project|projet actif)\b/i.test(text)) {
       const activeProject = projectState.activeProject;
       const replyText = activeProject
-        ? `Pwojè aktif ou se ${activeProject}.`
-        : 'Ou pa gen pwojè aktif pou kounye a.';
+        ? `Projet actif défini : ${activeProject}.`
+        : 'Aucun projet actif défini.';
 
       return this.response(input, replyText, {
         intent: 'project_active_query',
@@ -51,8 +76,8 @@ export class ProjectManager {
     if (/\b(?:quels sont mes projets|mes projets|list projects|projets)\b/i.test(text)) {
       const projects = [...projectState.projects.values()];
       const replyText = projects.length > 0
-        ? `Men pwojè ou yo: ${projects.join(', ')}.`
-        : 'Ou poko gen pwojè anrejistre.';
+        ? `Vos projets : ${projects.join(', ')}.`
+        : 'Aucun projet enregistré.';
 
       return this.response(input, replyText, {
         intent: 'project_list',
@@ -68,7 +93,8 @@ export class ProjectManager {
     if (!this.state.has(key)) {
       this.state.set(key, {
         activeProject: null,
-        projects: new Map()
+        projects: new Map(),
+        contextNotes: []
       });
     }
     return this.state.get(key);
@@ -99,4 +125,12 @@ function cleanProjectName(value) {
   return String(value)
     .replace(/[?.!]+$/g, '')
     .trim();
+}
+
+function buildContextReply(projectState) {
+  if (projectState.contextNotes.length === 0) {
+    return `Aucun contexte enregistré pour ${projectState.activeProject}.`;
+  }
+
+  return projectState.contextNotes.join('\n');
 }
