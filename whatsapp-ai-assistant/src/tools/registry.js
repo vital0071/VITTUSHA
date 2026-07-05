@@ -23,6 +23,21 @@ export const toolRegistry = {
     name: 'calendar',
     status: 'placeholder',
     description: 'Would be needed for scheduling, reminders, meetings, and calendar changes.'
+  },
+  create_task: {
+    name: 'create_task',
+    status: 'local',
+    description: 'Creates a local persistent task for the current user.'
+  },
+  list_tasks: {
+    name: 'list_tasks',
+    status: 'local',
+    description: 'Lists local persistent tasks for the current user.'
+  },
+  complete_task: {
+    name: 'complete_task',
+    status: 'local',
+    description: 'Marks a local persistent task as completed for the current user.'
   }
 };
 

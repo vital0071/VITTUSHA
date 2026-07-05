@@ -6,6 +6,9 @@ import { approveSuggestion, completeSuggestion, dismissSuggestion, listPendingSu
 import { formatSuggestionsList, generateDailyCheckIn, generateProactiveSuggestions } from '../proactive-engine.js';
 import { generateAssistantReply } from './openai-client.js';
 import { Brain } from '../brain/Brain.js';
+import { TaskService } from '../tasks/task-service.js';
+import { formatTaskResponse, parseTaskIntent } from '../tasks/task-intents.js';
+import { getTool } from '../tools/registry.js';
 
 const runtimeEvents = [];
 
@@ -83,10 +86,29 @@ async function processUserMessageFallback({
     generateProactiveSuggestions,
     formatSuggestionsList,
     generateAssistantReply,
+    taskService: new TaskService(),
+    parseTaskIntent,
+    formatTaskResponse,
+    getTool,
     ...dependencies
   };
 
   const detectedLanguage = language || detectLanguage(message);
+  const taskResponse = await handleTaskIntent({
+    message,
+    userPhone,
+    userId,
+    channel,
+    language: detectedLanguage,
+    conversationId,
+    chatId,
+    deps
+  });
+
+  if (taskResponse) {
+    return taskResponse;
+  }
+
   const proactiveResponse = await handleProactiveCommand({
     message,
     userPhone,
@@ -139,6 +161,65 @@ async function processUserMessageFallback({
       memoryCount: memories.length,
       conversationId,
       chatId
+    }
+  };
+}
+
+async function handleTaskIntent({ message, userPhone, userId, channel, language, conversationId, chatId, deps }) {
+  const intent = deps.parseTaskIntent(message);
+  if (!intent) {
+    return null;
+  }
+
+  const tenantId = userPhone;
+  const taskUserId = userId ?? userPhone;
+  const tool = deps.getTool(intent.type);
+  let task = null;
+  let tasks = [];
+
+  if (intent.type === 'create_task') {
+    task = await deps.taskService.createTask({
+      tenantId,
+      userId: taskUserId,
+      title: intent.title
+    });
+  } else if (intent.type === 'list_tasks') {
+    tasks = await deps.taskService.listTasks({
+      tenantId,
+      userId: taskUserId
+    });
+  } else if (intent.type === 'complete_task') {
+    task = await deps.taskService.completeTask({
+      tenantId,
+      userId: taskUserId,
+      title: intent.title
+    });
+  }
+
+  const replyText = deps.formatTaskResponse({
+    action: intent.type,
+    task,
+    tasks,
+    language
+  });
+
+  return {
+    replyText,
+    language,
+    channel,
+    userPhone,
+    userId: taskUserId,
+    memoryStored: null,
+    toolNeeded: tool?.name ?? intent.type,
+    taskId: task?.id ?? null,
+    requiresApproval: false,
+    selectedAgent: 'ExecutiveAgent',
+    metadata: {
+      conversationId,
+      chatId,
+      taskIntent: intent,
+      task,
+      tasks
     }
   };
 }
