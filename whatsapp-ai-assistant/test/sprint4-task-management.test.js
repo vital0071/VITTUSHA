@@ -237,6 +237,10 @@ test('Sprint 4 real Telegram runtime creates, lists, and completes Haitian Creol
     assert.equal(listed.agentResponse.toolNeeded, 'list_tasks');
     assert.match(listed.agentResponse.replyText, /rele John demen/);
 
+    const listedVariant = await send('Lis travay mwen yo');
+    assert.equal(listedVariant.agentResponse.toolNeeded, 'list_tasks');
+    assert.match(listedVariant.agentResponse.replyText, /rele John demen/);
+
     const completed = await send('Make travay rele John lan fini');
     assert.equal(completed.agentResponse.toolNeeded, 'complete_task');
     assert.match(completed.agentResponse.replyText, /rele John demen/);
@@ -253,8 +257,56 @@ test('Sprint 4 real Telegram runtime creates, lists, and completes Haitian Creol
     assert.deepEqual(sent.map((message) => message.chatId), [
       'telegram-chat-1',
       'telegram-chat-1',
+      'telegram-chat-1',
       'telegram-chat-1'
     ]);
+  } finally {
+    await cleanup();
+  }
+});
+
+
+test('Sprint 4 real Telegram runtime supports Haitian Creole create variant before OpenAI', async () => {
+  const { taskService, cleanup } = await createTempTaskService();
+  let openaiCalls = 0;
+
+  try {
+    const result = await routeTelegramMessage({
+      telegramMessageId: 10,
+      chatId: 'telegram-chat-2',
+      userId: 'telegram-user-2',
+      profileName: 'Vital',
+      text: 'Kreye yon travay pou rele John demen'
+    }, { update_id: 10 }, {
+      isApprovedTelegramChat: () => true,
+      createIncomingConversation: async () => ({ id: 700 }),
+      sendTelegramTextMessage: async () => ({ ok: true }),
+      markConversationReplied: async () => {},
+      markConversationFailed: async () => {},
+      logger: {
+        info() {},
+        warn() {},
+        error() {}
+      },
+      agentDependencies: {
+        taskService,
+        generateAssistantReply: async () => {
+          openaiCalls += 1;
+          throw new Error('OpenAI should not be called for deterministic Telegram task intents.');
+        }
+      }
+    });
+
+    const tasks = await taskService.listTasks({
+      tenantId: 'telegram-chat-2',
+      userId: 'telegram-user-2'
+    });
+
+    assert.equal(result.agentResponse.toolNeeded, 'create_task');
+    assert.match(result.agentResponse.replyText, /rele John demen/);
+    assert.equal(tasks.length, 1);
+    assert.equal(tasks[0].title, 'rele John demen');
+    assert.equal(openaiCalls, 0);
   } finally {
     await cleanup();
   }

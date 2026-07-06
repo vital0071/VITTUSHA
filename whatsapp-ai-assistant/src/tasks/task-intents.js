@@ -6,6 +6,7 @@ export function parseTaskIntent(message = '') {
 
   const createPatterns = [
     /^(?:ajoute|mete)\s+travay(?:\s+sa)?(?:\s+pou\s+mwen)?\s*:?\s+(.+)$/iu,
+    /^kreye\s+(?:yon\s+)?travay\s+(?:pou\s+)?(.+)$/iu,
     /^cree\s+(?:une\s+)?tache\s+pour\s+(.+)$/iu,
     /^cree\s+(?:une\s+)?tache\s*:?\s+(.+)$/iu,
     /^create\s+(?:a\s+)?task\s+(?:to|for)\s+(.+)$/iu,
@@ -22,7 +23,7 @@ export function parseTaskIntent(message = '') {
     }
   }
 
-  if (/^(?:ki\s+travay\s+mwen\s+genyen|montre\s+m\s+travay\s+mwen\s+yo|liste\s+mes\s+taches|what\s+are\s+my\s+tasks)\??$/iu.test(normalized)) {
+  if (/^(?:ki\s+travay\s+mwen\s+genyen|montre\s+m\s+travay\s+mwen\s+yo|lis\s+travay\s+mwen\s+yo|liste\s+mes\s+taches|what\s+are\s+my\s+tasks)\??$/iu.test(normalized)) {
     return { type: 'list_tasks' };
   }
 
