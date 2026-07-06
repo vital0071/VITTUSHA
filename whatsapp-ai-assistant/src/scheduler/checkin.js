@@ -1,7 +1,6 @@
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { generateDailyCheckIn } from '../proactive-engine.js';
-import { sendWhatsAppTextMessage } from '../channels/whatsapp.js';
 import { sendTelegramTextMessage } from '../channels/telegram.js';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -11,7 +10,6 @@ export function startDailyCheckInScheduler(dependencies = {}) {
     config,
     logger,
     generateDailyCheckIn,
-    sendWhatsAppTextMessage,
     sendTelegramTextMessage,
     setTimeout,
     ...dependencies
@@ -28,18 +26,14 @@ export function startDailyCheckInScheduler(dependencies = {}) {
       try {
         const target = resolveCheckInTarget(deps.config);
         if (!target) {
-          deps.logger.warn('Daily proactive check-in enabled but no channel is configured');
+          deps.logger.warn('Daily proactive check-in enabled but Telegram is not configured');
           return;
         }
         const text = await deps.generateDailyCheckIn({
           userId: target.userId,
           persist: true
         });
-        if (target.channel === 'telegram') {
-          await deps.sendTelegramTextMessage({ chatId: target.chatId, text });
-        } else {
-          await deps.sendWhatsAppTextMessage({ to: target.phoneNumber, text });
-        }
+        await deps.sendTelegramTextMessage({ chatId: target.chatId, text });
       } catch (error) {
         deps.logger.error('Daily proactive check-in failed', { error: error.message });
       } finally {
@@ -57,14 +51,6 @@ export function resolveCheckInTarget(appConfig = config) {
       channel: 'telegram',
       userId: appConfig.telegram.allowedChatId,
       chatId: appConfig.telegram.allowedChatId
-    };
-  }
-
-  if (appConfig.meta?.accessToken && appConfig.meta?.phoneNumberId && appConfig.approvedPhoneNumber) {
-    return {
-      channel: 'whatsapp',
-      userId: appConfig.approvedPhoneNumber,
-      phoneNumber: appConfig.approvedPhoneNumber
     };
   }
 
