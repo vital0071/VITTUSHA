@@ -145,9 +145,18 @@ export async function routeTelegramMessage(message, rawPayload, dependencies = {
 }
 
 function normalizeAgentReply(agentResponse) {
-  const reply = agentResponse?.replyText ?? agentResponse?.response ?? agentResponse?.text ?? agentResponse?.message;
+  const reply = isTerminalTaskToolResponse(agentResponse)
+    ? agentResponse.finalReply ?? agentResponse.replyText
+    : agentResponse?.replyText ?? agentResponse?.response ?? agentResponse?.text ?? agentResponse?.message;
+
   if (typeof reply !== 'string' || reply.length === 0) {
     throw new Error('AI Core returned a response without a string reply.');
   }
   return reply;
+}
+
+function isTerminalTaskToolResponse(agentResponse) {
+  return agentResponse?.openaiCalled === false
+    && agentResponse?.requiresApproval === false
+    && ['create_task', 'list_tasks', 'complete_task'].includes(agentResponse?.toolNeeded);
 }

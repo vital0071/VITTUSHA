@@ -52,7 +52,7 @@ export function formatTaskResponse({ action, task = null, tasks = [], language =
 
   if (action === 'create_task') {
     return translate(code, {
-      ht: `Travay ajoute: ${task.title}.`,
+      ht: `Travay la ajoute: ${task.title}.`,
       fr: `Tâche créée : ${task.title}.`,
       en: `Task created: ${task.title}.`
     });

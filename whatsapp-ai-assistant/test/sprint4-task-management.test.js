@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { processUserMessage } from '../src/ai-core/agent.js';
-import { routeTelegramMessage } from '../src/channels/telegram.js';
+import { extractTelegramMessage, routeTelegramMessage } from '../src/channels/telegram.js';
 import { TaskService } from '../src/tasks/task-service.js';
 
 test('Sprint 4 creates and persists tasks', async () => {
@@ -231,7 +231,8 @@ test('Sprint 4 real Telegram runtime creates, lists, and completes Haitian Creol
     const created = await send('Ajoute travay sa pou mwen: rele John demen');
     assert.equal(created.agentResponse.toolNeeded, 'create_task');
     assert.equal(created.agentResponse.selectedAgent, 'ExecutiveAgent');
-    assert.match(created.agentResponse.replyText, /rele John demen/);
+    assert.equal(created.agentResponse.replyText, 'Travay la ajoute: rele John demen.');
+    assert.doesNotMatch(created.agentResponse.replyText, /rap[eè]l|rappel|reminder|kalandriye|calendar|randevou/i);
 
     const listed = await send('Ki travay mwen genyen?');
     assert.equal(listed.agentResponse.toolNeeded, 'list_tasks');
@@ -303,10 +304,76 @@ test('Sprint 4 real Telegram runtime supports Haitian Creole create variant befo
     });
 
     assert.equal(result.agentResponse.toolNeeded, 'create_task');
-    assert.match(result.agentResponse.replyText, /rele John demen/);
+    assert.equal(result.agentResponse.replyText, 'Travay la ajoute: rele John demen.');
+    assert.doesNotMatch(result.agentResponse.replyText, /rap[eè]l|rappel|reminder|kalandriye|calendar|randevou/i);
     assert.equal(tasks.length, 1);
     assert.equal(tasks[0].title, 'rele John demen');
     assert.equal(openaiCalls, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+
+test('Sprint 4 Telegram replies ignore quoted bot text when parsing task commands', async () => {
+  const { taskService, cleanup } = await createTempTaskService();
+  let openaiCalls = 0;
+  const sent = [];
+
+  try {
+    const extracted = extractTelegramMessage({
+      update_id: 42,
+      message: {
+        message_id: 42,
+        date: 1710000000,
+        text: 'Wi',
+        chat: { id: 'telegram-chat-quoted', type: 'private' },
+        from: { id: 'telegram-user-quoted', first_name: 'Vital' },
+        reply_to_message: {
+          message_id: 41,
+          text: 'Ajoute travay sa pou mwen: rele John demen',
+          from: { is_bot: true, username: 'vittusha_bot' }
+        }
+      }
+    });
+
+    const result = await routeTelegramMessage(extracted, { update_id: 42 }, {
+      isApprovedTelegramChat: () => true,
+      createIncomingConversation: async () => ({ id: 800 }),
+      sendTelegramTextMessage: async (input) => {
+        sent.push(input);
+        return { ok: true };
+      },
+      markConversationReplied: async () => {},
+      markConversationFailed: async () => {},
+      logger: {
+        info() {},
+        warn() {},
+        error() {}
+      },
+      agentDependencies: {
+        taskService,
+        ensureCoreMemories: async () => {},
+        storeMemoryFromMessage: async () => null,
+        loadMemories: async () => [],
+        generateAssistantReply: async () => {
+          openaiCalls += 1;
+          return 'Mwen konprann.';
+        }
+      }
+    });
+
+    const tasks = await taskService.listTasks({
+      tenantId: 'telegram-chat-quoted',
+      userId: 'telegram-user-quoted'
+    });
+
+    assert.equal(extracted.text, 'Wi');
+    assert.equal(result.agentResponse.toolNeeded, null);
+    assert.equal(result.status, 'replied');
+    assert.equal(sent[0].text, 'Mwen konprann.');
+    assert.equal(tasks.length, 0);
+    assert.equal(openaiCalls, 1);
   } finally {
     await cleanup();
   }
