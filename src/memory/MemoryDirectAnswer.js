@@ -3,7 +3,7 @@ import { MEMORY_TYPES } from './MemoryTypes.js';
 const directAnswerRules = [
   {
     type: MEMORY_TYPES.PROJECT,
-    pattern: /\b(quel|quelle|ki|what|sur)\b.*\b(projet|pwoj[eè]|project|développe|developpe|devlope|develop|travaille|travay|working)\b/i,
+    pattern: /(?:\b(quel|quelle|ki|what|sur)\b.*\b(projet|pwoj[eè]|project|développe|developpe|devlope|develop|travaille|travay|working)\b|\bque\s+sais-tu\b.*\bprojet\b)/i,
     answer(memory, { language }) {
       return language === 'ht'
         ? `W ap devlope ${memory.content}.`
@@ -68,9 +68,7 @@ export function findDirectMemoryAnswer({ message = '', memoryContext = null, det
     }
 
     matchedQuestionType = rule.type;
-    const memory = memories
-      .filter((item) => item.type === rule.type)
-      .sort((a, b) => Number(b.score ?? 0) - Number(a.score ?? 0))[0];
+    const memory = selectBestMemoryForQuestion({ memories, type: rule.type, message });
 
     if (memory?.content) {
       return {
@@ -100,8 +98,45 @@ export function findDirectMemoryAnswer({ message = '', memoryContext = null, det
   };
 }
 
+function selectBestMemoryForQuestion({ memories = [], type, message = '' }) {
+  const normalizedMessage = normalizeText(message);
+  return memories
+    .filter((item) => item.type === type && String(item.content ?? '').trim())
+    .map((memory) => ({
+      memory,
+      nameMentioned: memoryNameMentioned(memory, normalizedMessage) ? 1 : 0
+    }))
+    .sort((a, b) => b.nameMentioned - a.nameMentioned || compareMemories(a.memory, b.memory))
+    .map((item) => item.memory)[0] ?? null;
+}
+
+function memoryNameMentioned(memory, normalizedMessage) {
+  const candidates = [memory.content, memory.title]
+    .map(normalizeText)
+    .filter((value) => value.length > 0);
+  return candidates.some((candidate) => normalizedMessage.includes(candidate));
+}
+
+function compareMemories(a, b) {
+  return Number(b.score ?? 0) - Number(a.score ?? 0)
+    || Number(b.importance ?? 0) - Number(a.importance ?? 0)
+    || Number(b.confidence ?? 0) - Number(a.confidence ?? 0)
+    || String(b.updated_at ?? b.created_at ?? '').localeCompare(String(a.updated_at ?? a.created_at ?? ''))
+    || String(a.id ?? '').localeCompare(String(b.id ?? ''));
+}
+
 function inferLanguage(message = '') {
   return /\b(ki|pwoj[eè]|pwoje|map|m ap|devlope|travay|mwen)\b/i.test(message)
     ? 'ht'
     : 'fr';
+}
+
+function normalizeText(value = '') {
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[.,;:!?]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
 }

@@ -10,6 +10,7 @@ import { MEMORY_TYPES } from '../src/memory/MemoryTypes.js';
 import { Brain } from '../src/brain/Brain.js';
 import { ConversationMemory } from '../src/memory/ConversationMemory.js';
 import { runDatabaseMigrations } from '../src/database/migrations.js';
+import { findDirectMemoryAnswer } from '../src/memory/MemoryDirectAnswer.js';
 
 function createMemoryService(logger = { info() {}, warn() {}, error() {} }) {
   const repository = new MemoryRepository({
@@ -342,4 +343,81 @@ test('Brain answers direct project questions from Creole memory', async () => {
   assert.equal(logger.events.some((event) => event.message === 'memory_direct_answer_match' && event.language === 'ht'), true);
   assert.equal(logger.events.some((event) => event.message === 'direct_memory_answer_success' && event.language === 'ht'), true);
   assert.equal(logger.events.some((event) => event.message === 'memory_used'), true);
+});
+
+
+test('direct project memory answer is deterministic when OpenAI fallback returns punctuation-varied acknowledgement', async () => {
+  const logger = {
+    events: [],
+    info(message, meta = {}) {
+      this.events.push({ level: 'info', message, ...meta });
+    },
+    warn() {},
+    error() {}
+  };
+  const memoryService = createMemoryService(logger);
+  const brain = new Brain({
+    logger,
+    memory: new ConversationMemory({ logger, service: memoryService }),
+    generateReply: async ({ userMessage }) => {
+      if (/Quel projet je développe/i.test(userMessage)) {
+        return 'Compris.,';
+      }
+      return 'Compris.,';
+    }
+  });
+
+  await brain.processMessage({
+    tenantId: 'default',
+    userId: 'user-project-punctuation',
+    channel: 'telegram',
+    conversationId: 'day-1',
+    message: 'Je développe Vittusha AI.',
+    metadata: { language: 'fr' }
+  });
+
+  const response = await brain.processMessage({
+    tenantId: 'default',
+    userId: 'user-project-punctuation',
+    channel: 'telegram',
+    conversationId: 'day-2',
+    message: 'Quel projet je développe ?',
+    metadata: { language: 'fr' }
+  });
+
+  assert.equal(response.reply, 'Vous développez Vittusha AI.');
+  assert.equal(response.metadata.openaiCalled, false);
+  assert.notEqual(response.reply, 'Compris.,');
+});
+
+test('direct project memory answer prefers project named in the question over unrelated project memories', () => {
+  const result = findDirectMemoryAnswer({
+    message: 'Que sais-tu sur le projet Vittusha AI ?',
+    detectedLanguage: 'fr',
+    memoryContext: {
+      relevantMemories: [
+        {
+          id: '2',
+          type: MEMORY_TYPES.PROJECT,
+          title: 'Autre Projet',
+          content: 'Autre Projet',
+          score: 0.99,
+          importance: 0.99,
+          confidence: 0.99
+        },
+        {
+          id: '1',
+          type: MEMORY_TYPES.PROJECT,
+          title: 'Vittusha AI',
+          content: 'Vittusha AI',
+          score: 0.5,
+          importance: 0.85,
+          confidence: 0.8
+        }
+      ]
+    }
+  });
+
+  assert.equal(result.answer, 'Vous développez Vittusha AI.');
+  assert.equal(result.memory.content, 'Vittusha AI');
 });

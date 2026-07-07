@@ -28,7 +28,7 @@ export class MemoryRetriever {
         ...memory,
         score: this.scorer.score(memory, { query: message })
       }))
-      .sort((a, b) => b.score - a.score)
+      .sort(compareMemories)
       .slice(0, limit);
 
     await this.repository.markMemoriesUsed(scored.map((memory) => memory.id));
@@ -77,4 +77,12 @@ function dedupeById(memories) {
     seen.add(id);
     return true;
   });
+}
+
+function compareMemories(a, b) {
+  return Number(b.score ?? 0) - Number(a.score ?? 0)
+    || Number(b.importance ?? 0) - Number(a.importance ?? 0)
+    || Number(b.confidence ?? 0) - Number(a.confidence ?? 0)
+    || String(b.updated_at ?? b.created_at ?? '').localeCompare(String(a.updated_at ?? a.created_at ?? ''))
+    || String(a.id ?? '').localeCompare(String(b.id ?? ''));
 }

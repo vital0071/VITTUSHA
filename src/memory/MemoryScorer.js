@@ -43,17 +43,17 @@ function freshnessScore(dateValue, now) {
 }
 
 function relevanceScore(memory, query) {
-  const cleanQuery = String(query).toLowerCase().trim();
+  const cleanQuery = normalizeText(query);
   if (!cleanQuery) {
     return 0.5;
   }
 
-  const haystack = [
+  const haystack = normalizeText([
     memory.type,
     memory.title,
     memory.content,
     ...(memory.tags ?? [])
-  ].join(' ').toLowerCase();
+  ].join(' '));
 
   const terms = cleanQuery.split(/\s+/).filter(Boolean);
   if (terms.length === 0) {
@@ -62,4 +62,14 @@ function relevanceScore(memory, query) {
 
   const matches = terms.filter((term) => haystack.includes(term)).length;
   return Math.min(matches / terms.length, 1);
+}
+
+function normalizeText(value = '') {
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[.,;:!?]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
 }
