@@ -3,6 +3,12 @@ import { logger } from '../logger.js';
 import { processUserMessage } from '../ai-core/agent.js';
 import { createIncomingConversation, markConversationFailed, markConversationReplied } from '../services/conversations.js';
 import { detectLanguage } from '../services/language.js';
+import {
+  ensureLegacyTelegramUser,
+  getTelegramUserContext,
+  looksLikeTelegramLinkCode,
+  redeemTelegramLinkCode
+} from '../users/user-service.js';
 
 export function extractTelegramMessage(payload = {}) {
   const sourceMessage = payload.message ?? payload.edited_message ?? null;
@@ -18,6 +24,7 @@ export function extractTelegramMessage(payload = {}) {
     telegramMessageId: sourceMessage.message_id,
     chatId: String(sourceMessage.chat.id),
     userId: String(sourceMessage.from?.id ?? sourceMessage.chat.id),
+    username: from.username ?? null,
     profileName,
     text: sourceMessage.text,
     timestamp: sourceMessage.date ? new Date(Number(sourceMessage.date) * 1000) : new Date(),
@@ -62,11 +69,73 @@ export async function routeTelegramMessage(message, rawPayload, dependencies = {
     markConversationFailed,
     processUserMessage,
     sendTelegramTextMessage,
+    ensureLegacyTelegramUser,
+    getTelegramUserContext,
+    looksLikeTelegramLinkCode,
+    redeemTelegramLinkCode,
     logger,
     ...dependencies
   };
 
-  if (!deps.isApprovedTelegramChat(message.chatId)) {
+  const trimmedText = String(message.text ?? '').trim();
+  if (deps.looksLikeTelegramLinkCode(trimmedText)) {
+    const redemption = await deps.redeemTelegramLinkCode({
+      linkCode: trimmedText,
+      chatId: message.chatId,
+      telegramUserId: message.userId,
+      telegramUsername: message.username,
+      profileName: message.profileName
+    });
+
+    if (redemption.status === 'linked') {
+      await deps.sendTelegramTextMessage({
+        chatId: message.chatId,
+        text: 'Telegram konekte ak kont Vittusha ou. Ou ka kontinye pale ak Vittusha isit la.'
+      });
+      return { status: 'linked', vittushaUserId: redemption.vittusha_user_id };
+    }
+
+    if (['invalid', 'expired', 'used'].includes(redemption.status)) {
+      await deps.sendTelegramTextMessage({
+        chatId: message.chatId,
+        text: redemption.status === 'expired'
+          ? 'Kod koneksyon an ekspire. Tanpri kreye yon nouvo kod nan portal Vittusha a.'
+          : 'Kod koneksyon an pa valab oswa li deja itilize. Tanpri verifye li nan portal Vittusha a.'
+      });
+      return { status: `link_code_${redemption.status}` };
+    }
+  }
+
+  let telegramContext = null;
+
+  if (deps.isApprovedTelegramChat(message.chatId)) {
+    let legacyUser = null;
+    try {
+      legacyUser = await deps.ensureLegacyTelegramUser({
+        chatId: message.chatId,
+        profileName: message.profileName
+      });
+    } catch (error) {
+      deps.logger.warn('Legacy Telegram user provisioning skipped; continuing with chat ID compatibility', {
+        chatId: message.chatId,
+        error: error.message
+      });
+    }
+    telegramContext = {
+      authorized: true,
+      backendUserId: legacyUser?.id ?? null,
+      vittushaUserId: legacyUser?.vittusha_user_id ?? null,
+      userKey: message.chatId,
+      legacy: true
+    };
+  } else {
+    telegramContext = await deps.getTelegramUserContext({
+      chatId: message.chatId,
+      telegramUserId: message.userId
+    });
+  }
+
+  if (!telegramContext.authorized) {
     deps.logger.warn('Rejected Telegram message from unauthorized chat', {
       chatId: message.chatId,
       telegramMessageId: message.telegramMessageId
@@ -77,10 +146,12 @@ export async function routeTelegramMessage(message, rawPayload, dependencies = {
     return { status: 'rejected' };
   }
 
+  const userKey = telegramContext.userKey ?? message.chatId;
+  const agentUserId = telegramContext.legacy ? message.userId : userKey;
   const detectedLanguage = deps.detectLanguage(message.text);
   const conversation = await deps.createIncomingConversation({
     whatsappMessageId: `telegram:${message.chatId}:${message.telegramMessageId}`,
-    fromPhone: message.chatId,
+    fromPhone: userKey,
     profileName: message.profileName,
     userMessage: message.text,
     detectedLanguage,
@@ -99,12 +170,14 @@ export async function routeTelegramMessage(message, rawPayload, dependencies = {
   try {
     const agentInput = {
       message: message.text,
-      userPhone: message.chatId,
-      userId: message.userId,
+      userPhone: userKey,
+      userId: agentUserId,
       channel: 'telegram',
       language: detectedLanguage,
       conversationId: conversation.id,
-      chatId: message.chatId
+      chatId: message.chatId,
+      backendUserId: telegramContext.backendUserId,
+      vittushaUserId: telegramContext.vittushaUserId
     };
     if (dependencies.agentDependencies) {
       agentInput.dependencies = dependencies.agentDependencies;
@@ -124,7 +197,9 @@ export async function routeTelegramMessage(message, rawPayload, dependencies = {
       whatsappResponse: telegramResponse,
       agentResponse: {
         ...agentResponse,
-        replyText
+        replyText,
+        backendUserId: telegramContext.backendUserId,
+        vittushaUserId: telegramContext.vittushaUserId
       }
     });
 

@@ -35,6 +35,17 @@ export const config = {
     botToken: readEnv('TELEGRAM_BOT_TOKEN'),
     allowedChatId: readEnv('TELEGRAM_ALLOWED_CHAT_ID')
   },
+  wordpress: {
+    baseUrl: readEnv('WORDPRESS_BASE_URL', 'https://ai.stshaiti.com'),
+    apiKeyId: readEnv('WORDPRESS_API_KEY_ID'),
+    hmacSecret: readEnv('WORDPRESS_HMAC_SECRET'),
+    webhookSecret: readEnv('WORDPRESS_WEBHOOK_SECRET'),
+    allowedOrigin: readEnv('ALLOWED_WORDPRESS_ORIGIN', 'https://ai.stshaiti.com'),
+    hmacMaxSkewSeconds: Number(readEnv('WORDPRESS_HMAC_MAX_SKEW_SECONDS', '300'))
+  },
+  linkCodes: {
+    ttlSeconds: Number(readEnv('LINK_CODE_TTL_SECONDS', '1800'))
+  },
   approvedPhoneNumber: readEnv('APPROVED_PHONE_NUMBER'),
   openai: {
     apiKey: readEnv('OPENAI_API_KEY'),

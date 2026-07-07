@@ -23,6 +23,7 @@ test('extracts Telegram text messages', () => {
     telegramMessageId: 44,
     chatId: '123456789',
     userId: '123456789',
+    username: null,
     profileName: 'Vital Zephy',
     text: 'Bonjou',
     timestamp: new Date(1710000000 * 1000),
@@ -53,6 +54,10 @@ test('routes approved Telegram messages to AI Core', async () => {
 
   const result = await routeTelegramMessage(message, { update_id: 1001 }, {
     isApprovedTelegramChat: () => true,
+    ensureLegacyTelegramUser: async () => ({ id: 'usr_legacy', vittusha_user_id: 'legacy_telegram_123456789' }),
+    getTelegramUserContext: async () => ({ authorized: false }),
+    redeemTelegramLinkCode: async () => ({ status: 'not_code' }),
+    looksLikeTelegramLinkCode: () => false,
     createIncomingConversation: async (conversation) => {
       calls.push(['conversation', conversation]);
       return { id: 21 };
@@ -93,7 +98,9 @@ test('routes approved Telegram messages to AI Core', async () => {
     channel: 'telegram',
     language: 'ht',
     conversationId: 21,
-    chatId: '123456789'
+    chatId: '123456789',
+    backendUserId: 'usr_legacy',
+    vittushaUserId: 'legacy_telegram_123456789'
   });
   assert.equal(calls[2][1].chatId, '123456789');
   assert.equal(calls[2][1].text, 'Men check-in jodi a.');
@@ -108,6 +115,9 @@ test('rejects unauthorized Telegram chats', async () => {
     text: 'Hello'
   }, {}, {
     isApprovedTelegramChat: () => false,
+    getTelegramUserContext: async () => ({ authorized: false }),
+    redeemTelegramLinkCode: async () => ({ status: 'not_code' }),
+    looksLikeTelegramLinkCode: () => false,
     sendTelegramTextMessage: async (input) => {
       sent.push(input);
       return { ok: true };
@@ -124,4 +134,57 @@ test('rejects unauthorized Telegram chats', async () => {
 
   assert.equal(result.status, 'rejected');
   assert.deepEqual(sent, [{ chatId: '999', text: 'Unauthorized' }]);
+});
+
+test('redeems Telegram link codes before creating conversations', async () => {
+  const calls = [];
+  const result = await routeTelegramMessage({
+    telegramMessageId: 47,
+    chatId: '777',
+    userId: '888',
+    username: 'newuser',
+    profileName: 'New User',
+    text: 'A'.repeat(32)
+  }, {}, {
+    looksLikeTelegramLinkCode: () => true,
+    redeemTelegramLinkCode: async (input) => {
+      calls.push(['redeem', input]);
+      return { status: 'linked', vittusha_user_id: 'vit_abc' };
+    },
+    sendTelegramTextMessage: async (input) => {
+      calls.push(['send', input]);
+      return { ok: true };
+    },
+    createIncomingConversation: async () => {
+      throw new Error('link codes must not be stored as conversations');
+    },
+    logger: { info() {}, warn() {}, error() {} }
+  });
+
+  assert.equal(result.status, 'linked');
+  assert.equal(calls[0][0], 'redeem');
+  assert.equal(calls[0][1].linkCode, 'A'.repeat(32));
+  assert.equal(calls[1][0], 'send');
+});
+
+test('does not send invalid link-code-looking Telegram messages to AI Core', async () => {
+  const result = await routeTelegramMessage({
+    telegramMessageId: 48,
+    chatId: '777',
+    userId: '888',
+    text: 'B'.repeat(32)
+  }, {}, {
+    looksLikeTelegramLinkCode: () => true,
+    redeemTelegramLinkCode: async () => ({ status: 'expired' }),
+    sendTelegramTextMessage: async () => ({ ok: true }),
+    processUserMessage: async () => {
+      throw new Error('link codes must not reach Brain');
+    },
+    createIncomingConversation: async () => {
+      throw new Error('link codes must not be stored as conversations');
+    },
+    logger: { info() {}, warn() {}, error() {} }
+  });
+
+  assert.equal(result.status, 'link_code_expired');
 });
