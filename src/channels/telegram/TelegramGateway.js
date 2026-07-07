@@ -4,11 +4,19 @@ import { logger as defaultLogger } from '../../shared/logger.js';
 import { ChannelGateway } from '../ChannelGateway.js';
 
 export class TelegramGateway extends ChannelGateway {
-  constructor({ brain = defaultBrain, logger = defaultLogger, fetchFn = fetch } = {}) {
+  constructor({
+    brain = defaultBrain,
+    logger = defaultLogger,
+    fetchFn = fetch,
+    botToken = config.telegram.botToken,
+    allowedChatId = config.telegram.allowedChatId
+  } = {}) {
     super();
     this.brain = brain;
     this.logger = logger;
     this.fetch = fetchFn;
+    this.botToken = botToken;
+    this.allowedChatId = allowedChatId ? String(allowedChatId) : '';
   }
 
   receive(update = {}) {
@@ -17,7 +25,7 @@ export class TelegramGateway extends ChannelGateway {
   }
 
   async send({ message, reply }) {
-    if (!config.telegram.botToken) {
+    if (!this.botToken) {
       this.logger.warn('telegram_send_skipped_missing_token', {
         channel: 'telegram',
         conversationId: message?.conversationId
@@ -25,7 +33,7 @@ export class TelegramGateway extends ChannelGateway {
       return { reply, supported: false };
     }
 
-    const response = await this.fetch(`https://api.telegram.org/bot${config.telegram.botToken}/sendMessage`, {
+    const response = await this.fetch(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -88,7 +96,7 @@ export class TelegramGateway extends ChannelGateway {
   }
 
   async handle(normalized) {
-    if (config.telegram.allowedChatId && normalized.conversationId !== config.telegram.allowedChatId) {
+    if (this.allowedChatId && normalized.conversationId !== this.allowedChatId) {
       this.logger.warn('telegram_rejected_unauthorized_chat', {
         channel: 'telegram',
         userId: normalized.userId,

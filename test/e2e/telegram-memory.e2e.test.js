@@ -209,7 +209,7 @@ test('E2E Telegram memory direct answer does not call OpenAI on known project qu
     }
   }
 
-  const gateway = new CapturingTelegramGateway({ brain, logger });
+  const gateway = new CapturingTelegramGateway({ brain, logger, allowedChatId: '' });
   const app = createApp({ telegramGateway: gateway, logger });
 
   const firstResponse = await postJson(app, '/webhook/telegram', telegramTextUpdate({
@@ -261,7 +261,7 @@ test('E2E Telegram creates and lists projects through ProjectManager', async () 
   }
 
   const app = createApp({
-    telegramGateway: new CapturingTelegramGateway({ brain, logger }),
+    telegramGateway: new CapturingTelegramGateway({ brain, logger, allowedChatId: '' }),
     logger
   });
 
@@ -308,7 +308,7 @@ test('E2E Telegram create project is intercepted before OpenAI', async () => {
   }
 
   const app = createApp({
-    telegramGateway: new CapturingTelegramGateway({ brain, logger }),
+    telegramGateway: new CapturingTelegramGateway({ brain, logger, allowedChatId: '' }),
     logger
   });
 
@@ -382,7 +382,7 @@ test('E2E Telegram ProjectManager persists project state across messages', async
   }
 
   const app = createApp({
-    telegramGateway: new CapturingTelegramGateway({ brain, logger }),
+    telegramGateway: new CapturingTelegramGateway({ brain, logger, allowedChatId: '' }),
     logger
   });
 
@@ -435,7 +435,7 @@ test('E2E Telegram answers active project through ProjectManager', async () => {
   }
 
   const app = createApp({
-    telegramGateway: new CapturingTelegramGateway({ brain, logger }),
+    telegramGateway: new CapturingTelegramGateway({ brain, logger, allowedChatId: '' }),
     logger
   });
 
@@ -477,7 +477,7 @@ test('E2E Telegram adds and retrieves project notes through ProjectManager', asy
   }
 
   const app = createApp({
-    telegramGateway: new CapturingTelegramGateway({ brain, logger }),
+    telegramGateway: new CapturingTelegramGateway({ brain, logger, allowedChatId: '' }),
     logger
   });
 
@@ -531,7 +531,7 @@ test('debug brain-test uses the same Telegram Brain pipeline and reports direct 
       return 'Compris.';
     }
   });
-  const gateway = new TelegramGateway({ brain, logger });
+  const gateway = new TelegramGateway({ brain, logger, allowedChatId: '' });
   const app = createApp({
     telegramGateway: gateway,
     logger,
