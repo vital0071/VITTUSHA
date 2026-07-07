@@ -41,7 +41,7 @@ test('formats daily check-in in Haitian Creole', () => {
     }
   ]);
 
-  assert.match(text, /Bonjou Vital-Herne/);
+  assert.match(text, /Bonjou\. Men check-in jodi a/);
   assert.match(text, /Mwen pap egzekite okenn aksyon ekstèn san apwobasyon ou/);
 });
 
@@ -78,7 +78,7 @@ test('sends proactive check-in through Telegram', async () => {
     },
     generateDailyCheckIn: async (input) => {
       assert.deepEqual(input, { userId: '123456789', persist: true });
-      return 'Bonjou Vital-Herne. Men check-in jodi a.';
+      return 'Bonjou. Men check-in jodi a.';
     },
     sendTelegramTextMessage: async (input) => {
       sent.push(input);
@@ -103,6 +103,6 @@ test('sends proactive check-in through Telegram', async () => {
   await scheduled[0].callback();
   assert.deepEqual(sent, [{
     chatId: '123456789',
-    text: 'Bonjou Vital-Herne. Men check-in jodi a.'
+    text: 'Bonjou. Men check-in jodi a.'
   }]);
 });

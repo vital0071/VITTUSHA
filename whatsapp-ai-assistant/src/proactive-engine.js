@@ -1,10 +1,11 @@
 import { query } from './db.js';
 import { createSuggestion, listPendingSuggestions } from './suggestions.js';
+import { listRecentConversations } from './services/conversations.js';
 
 const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
 export async function loadProactiveContext({ userId }) {
-  const [tasksResult, suggestions, conversationsResult] = await Promise.all([
+  const [tasksResult, suggestions, recentConversations] = await Promise.all([
     query(
       `
         SELECT id, title, description, status, steps, metadata, created_at, updated_at
@@ -16,22 +17,13 @@ export async function loadProactiveContext({ userId }) {
       [userId]
     ),
     listPendingSuggestions({ userId, limit: 20 }),
-    query(
-      `
-        SELECT id, user_message, assistant_reply, detected_language, created_at
-        FROM conversations
-        WHERE from_phone = $1
-        ORDER BY created_at DESC
-        LIMIT 10
-      `,
-      [userId]
-    )
+    listRecentConversations({ userId, limit: 10 })
   ]);
 
   return {
     tasks: tasksResult.rows,
     pendingSuggestions: suggestions,
-    recentConversations: conversationsResult.rows
+    recentConversations
   };
 }
 
@@ -149,7 +141,7 @@ export function formatSuggestionsList(suggestions = []) {
 
 export function formatDailyCheckIn(suggestions = []) {
   const topSuggestions = suggestions.slice(0, 5);
-  return `Bonjou Vital-Herne. Men check-in jodi a:\n\n${formatSuggestionsList(topSuggestions)}\n\nMwen pap egzekite okenn aksyon ekstèn san apwobasyon ou.`;
+  return `Bonjou. Men check-in jodi a:\n\n${formatSuggestionsList(topSuggestions)}\n\nMwen pap egzekite okenn aksyon ekstèn san apwobasyon ou.`;
 }
 
 function buildDailyActions({ pendingTasks, blockedTasks, pendingSuggestions, recentConversations }) {

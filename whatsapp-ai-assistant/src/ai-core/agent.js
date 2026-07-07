@@ -1,5 +1,7 @@
 import { detectLanguage } from '../services/language.js';
-import { ensureCoreMemories, loadMemories, storeMemoryFromMessage } from '../memory/memory-store.js';
+import { ensureCoreMemories, extractDurableMemory, loadMemories, storeMemoryFromMessage } from '../memory/memory-store.js';
+import { listRecentConversations } from '../services/conversations.js';
+import { logger } from '../logger.js';
 import { buildApprovalTask, createTask } from '../tasks/task-planner.js';
 import { detectNeededTool } from '../tools/registry.js';
 import { approveSuggestion, completeSuggestion, dismissSuggestion, listPendingSuggestions } from '../suggestions.js';
@@ -76,6 +78,7 @@ async function processUserMessageFallback({
     ensureCoreMemories,
     loadMemories,
     storeMemoryFromMessage,
+    extractDurableMemory,
     detectNeededTool,
     createTask,
     listPendingSuggestions,
@@ -86,6 +89,8 @@ async function processUserMessageFallback({
     generateProactiveSuggestions,
     formatSuggestionsList,
     generateAssistantReply,
+    listRecentConversations,
+    logger,
     taskService: new TaskService(),
     parseTaskIntent,
     formatTaskResponse,
@@ -94,6 +99,8 @@ async function processUserMessageFallback({
   };
 
   const detectedLanguage = language || detectLanguage(message);
+  deps.logger.info('brain_started', { channel, userId, chatId });
+  deps.logger.info('canonical_user_resolved', { channel, userId, userPhone, chatId });
   const taskResponse = await handleTaskIntent({
     message,
     userPhone,
@@ -125,8 +132,42 @@ async function processUserMessageFallback({
   }
 
   await deps.ensureCoreMemories({ userPhone });
-  const storedMemory = await deps.storeMemoryFromMessage({ userPhone, message });
+  deps.logger.info('memory_extraction_started', { channel, userId, userPhone });
+  const memoryExtraction = deps.extractDurableMemory(message);
+  const storedMemory = memoryExtraction.memory
+    ? await deps.storeMemoryFromMessage({ userPhone, message })
+    : null;
+  deps.logger.info('memory_extraction_completed', {
+    channel,
+    userId,
+    userPhone,
+    memoryCount: storedMemory ? 1 : 0
+  });
+  deps.logger.info(storedMemory ? 'memory_persisted' : 'memory_rejected', {
+    channel,
+    userId,
+    userPhone,
+    reason: storedMemory ? 'durable_fact' : memoryExtraction.reason
+  });
+  deps.logger.info('memory_lookup_started', { channel, userId, userPhone });
   const memories = await deps.loadMemories({ userPhone });
+  deps.logger.info('memory_lookup_completed', { channel, userId, userPhone, memoryCount: memories.length });
+  const recentConversations = await deps.listRecentConversations({
+    userId: userPhone,
+    excludeId: conversationId,
+    limit: 10
+  }).catch((error) => {
+    deps.logger.warn('recent_conversation_lookup_failed', { channel, userId, userPhone, error: error.message });
+    return [];
+  });
+  deps.logger.info('prompt_context_built', {
+    channel,
+    userId,
+    memoryCount: memories.length,
+    recentMessageCount: recentConversations.length,
+    projectContextCount: 0
+  });
+  deps.logger.info('core_identity_injected', { channel, userId });
   const neededTool = deps.detectNeededTool(message);
 
   let task = null;
@@ -139,13 +180,22 @@ async function processUserMessageFallback({
     });
   }
 
+  deps.logger.info('agent_selected', { channel, userId, agent: 'ExecutiveAgent' });
+  deps.logger.info('openai_called', { channel, userId });
   const replyText = await deps.generateAssistantReply({
     userMessage: message,
     detectedLanguage,
     memories,
     neededTool,
-    pendingTask: task
+    pendingTask: task,
+    recentConversations,
+    userProfile: {
+      displayName: null,
+      vittushaUserId: userId
+    },
+    projectContext: []
   });
+  deps.logger.info('response_generated', { channel, userId });
 
   return {
     replyText,
@@ -159,6 +209,7 @@ async function processUserMessageFallback({
     requiresApproval: Boolean(neededTool),
     metadata: {
       memoryCount: memories.length,
+      recentMessageCount: recentConversations.length,
       conversationId,
       chatId
     }
