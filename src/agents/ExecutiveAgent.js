@@ -126,7 +126,8 @@ export class ExecutiveAgent {
         agent: this.name,
         language: context.detectedLanguage,
         toolNeeded: neededTool?.name ?? null,
-        taskId: task?.id ?? null
+        taskId: task?.id ?? null,
+        responseSource: response.source ?? 'unknown'
       }
     });
 
@@ -149,6 +150,7 @@ export class ExecutiveAgent {
         openaiCalled: response.openaiCalled ?? false,
         responseSource: response.source ?? 'unknown',
         directMemoryAnswer: response.directMemoryAnswer ?? null,
+        identityAnswer: response.identityAnswer ?? null,
         retrievedMemories: context.memoryContext?.relevantMemories ?? []
       }
     };

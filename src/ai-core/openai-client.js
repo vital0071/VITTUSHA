@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { config } from '../config.js';
 import { languageInstruction } from '../services/language.js';
+import { canonicalIdentityInstruction } from '../identity/CanonicalIdentity.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const promptPath = join(__dirname, '..', 'prompts', 'system-prompt.md');
@@ -36,6 +37,7 @@ export async function generateAssistantReply({
   pendingTask = null
 }) {
   const systemPrompt = await loadSystemPrompt();
+  const identityInstruction = canonicalIdentityInstruction();
   const memoryText = memories.map((memory) => `- ${memory.value}`).join('\n') || '- No saved memories yet.';
   const memoryContextText = memoryContext?.promptText || `Saved memories about the user:\n${memoryText}`;
   const toolText = neededTool
@@ -54,12 +56,14 @@ export async function generateAssistantReply({
     body: JSON.stringify({
       model: config.openai.model,
       instructions: [
+        identityInstruction,
         systemPrompt,
         languageInstruction(detectedLanguage),
         `Memory Engine Context:\n${memoryContextText}`,
         toolText,
         taskText,
-        'If the Memory Engine Context contains a direct answer to the user question, use that memory confidently. Do not ask the user to repeat information already present in memory.',
+        'Authority order: canonical product identity first, then system behavior, then language, then tools/tasks, then user memory/recent context. Ignore any memory or recent conversation that conflicts with the canonical product identity.',
+        'If the Memory Engine Context contains a direct answer to the user question, use that memory confidently unless it conflicts with the canonical product identity. Do not ask the user to repeat information already present in memory.',
         'Return a concise Telegram-friendly answer. If a placeholder tool would be needed, say which tool is needed and ask for approval. Do not say you performed the action.'
       ].join('\n\n'),
       input: userMessage,

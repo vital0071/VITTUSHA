@@ -1,5 +1,6 @@
 import { generateAssistantReply } from '../ai-core/openai-client.js';
 import { findDirectMemoryAnswer } from '../memory/MemoryDirectAnswer.js';
+import { findCanonicalIdentityAnswer } from '../identity/CanonicalIdentity.js';
 
 const TEMPORARY_FAILURE_MESSAGE = 'Je rencontre une difficulté technique temporaire. Réessaie dans quelques instants.';
 
@@ -11,6 +12,34 @@ export class ResponseGenerator {
 
   async generate({ message, detectedLanguage, memories, memoryContext, neededTool, pendingTask }) {
     try {
+      const identityAnswer = findCanonicalIdentityAnswer({
+        message,
+        detectedLanguage
+      });
+
+      if (identityAnswer.matched) {
+        this.logger.info('canonical_identity_answer_success', {
+          language: identityAnswer.language,
+          matchedQuestionType: identityAnswer.matchedQuestionType,
+          reason: identityAnswer.reason
+        });
+        this.logger.info('openai_skipped', {
+          reason: 'canonical_identity'
+        });
+        this.logger.info('response_generated', {
+          answerLength: identityAnswer.answer.length,
+          source: 'identity'
+        });
+
+        return {
+          answer: identityAnswer.answer,
+          error: null,
+          source: 'identity',
+          openaiCalled: false,
+          identityAnswer
+        };
+      }
+
       this.logger.info('direct_memory_answer_attempt', {
         memoryCount: memoryContext?.relevantMemories?.length ?? 0,
         detectedLanguage,

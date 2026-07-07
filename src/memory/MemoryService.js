@@ -178,7 +178,7 @@ export class MemoryService {
     });
     const extracted = this.extractor.extract({
       message,
-      assistantReply: answer
+      assistantReply: metadata.responseSource === 'identity' ? '' : answer
     });
     this.logger?.info('memory_extraction', {
       tenantId,
